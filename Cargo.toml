@@ -1,0 +1,15 @@
+[package]
+name = "short_flight"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+bevy = "0.15.1"
+bevy-inspector-egui = "0.29.1"
+bevy_ecs_tilemap = "0.15.0"
+bevy_editor_cam = "0.5.0"
+bevy_picking = "0.15.1"
+ldtk_rust = "0.6.0"
+log = "0.4.25"
+serde_json = "1.0.138"
+thiserror = "2.0.11"
