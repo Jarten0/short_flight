@@ -1,3 +1,4 @@
+use bevy::prelude::Asset;
 use bevy_ecs_tilemap::tiles::TileVisible;
 use bevy_ecs_tilemap::{
     helpers::geometry::get_tilemap_center_transform,
@@ -14,6 +15,8 @@ use bevy::{
     prelude::*,
 };
 use bevy_ecs_tilemap::map::TilemapType;
+
+use crate::SpawnMeshEvent;
 
 #[derive(Default)]
 pub struct LdtkPlugin;
@@ -99,6 +102,7 @@ impl AssetLoader for LdtkLoader {
                 .map(|dep| (dep.0, load_context.load(dep.1.clone())))
                 .collect(),
         };
+        log::info!("Finished loading asset");
         Ok(ldtk_map)
     }
 
@@ -108,15 +112,26 @@ impl AssetLoader for LdtkLoader {
     }
 }
 
-pub fn initialize_immediate_tilemaps(mut commands: Commands, maps: Res<Assets<LdtkMap>>) {
-    // spawn_tile_components(
-    //     &mut commands,
-    //     &maps,
-    //     changed_map,
-    //     entity,
-    //     map_handle,
-    //     map_config,
-    // );
+pub fn initialize_immediate_tilemaps(
+    mut commands: Commands,
+    query: Query<(&LdtkMapHandle, &LdtkMapConfig)>,
+    maps: Res<Assets<LdtkMap>>,
+) {
+    log::info!("Initializing immediate tilemaps");
+    let query_iter = query.iter().map(|query| {
+        (
+            maps.get(&query.0 .0).expect(&format!(
+                "Expected map asset, found nothing for {} in {:?}",
+                query.0 .0.id(),
+                maps.ids().collect::<Vec<AssetId<LdtkMap>>>()
+            )),
+            query,
+        )
+    });
+
+    for (map, (_, config)) in query_iter {
+        spawn_map_components(&mut commands, map, config);
+    }
 }
 
 pub fn process_loaded_tile_maps(
@@ -163,38 +178,24 @@ pub fn process_loaded_tile_maps(
     });
 
     for (changed_map, (entity, map_handle, map_config)) in changed_maps {
-        spawn_tile_components(
-            &mut commands,
-            &maps,
-            changed_map,
-            entity,
-            map_handle,
-            map_config,
+        assert!(
+            map_handle.0.id() == *changed_map,
+            "Invalid deviation from the example"
         );
+
+        let Some(ldtk_map) = maps.get(&map_handle.0) else {
+            log::error!("Could not retrieve asset {:?}", map_handle.0);
+            return;
+        };
+
+        // Despawn all existing tilemaps for this LdtkMap
+        commands.entity(entity).despawn_descendants();
+
+        spawn_map_components(&mut commands, ldtk_map, map_config);
     }
 }
 
-fn spawn_tile_components(
-    commands: &mut Commands<'_, '_>,
-    maps: &Res<'_, Assets<LdtkMap>>,
-    changed_map: &AssetId<LdtkMap>,
-    entity: Entity,
-    map_handle: &LdtkMapHandle,
-    map_config: &LdtkMapConfig,
-) {
-    assert!(
-        map_handle.0.id() == *changed_map,
-        "Invalid deviation from the example"
-    );
-
-    let Some(ldtk_map) = maps.get(&map_handle.0) else {
-        log::error!("Could not retrieve asset {:?}", map_handle.0);
-        return;
-    };
-
-    // Despawn all existing tilemaps for this LdtkMap
-    commands.entity(entity).despawn_descendants();
-
+fn spawn_map_components(commands: &mut Commands, ldtk_map: &LdtkMap, map_config: &LdtkMapConfig) {
     // Pull out tilesets and their definitions into a new hashmap
     let mut tilesets = HashMap::new();
     ldtk_map.project.defs.tilesets.iter().for_each(|tileset| {
@@ -250,63 +251,59 @@ fn spawn_tile_components(
             .chain(layer.auto_layer_tiles.iter())
             .enumerate()
         {
-            storage.set(
-                &{
-                    let mut position = TilePos {
-                        x: (tile.px[0] / default_grid_size) as u32,
-                        y: (tile.px[1] / default_grid_size) as u32,
-                    };
+            let position = {
+                let mut position = TilePos {
+                    x: (tile.px[0] / default_grid_size) as u32,
+                    y: (tile.px[1] / default_grid_size) as u32,
+                };
 
-                    position.y = map_tile_count_y - position.y - 1;
-                    position
+                position.y = map_tile_count_y - position.y - 1;
+                position
+            };
+
+            let bundle = (
+                TileBundle {
+                    position,
+                    tilemap_id: TilemapId(map_entity),
+                    texture_index: TileTextureIndex(tile.t as u32),
+                    // Hidden since we use a mesh to draw them anyways
+                    // these tiles are more of state managment really, since theyre useless in 3d
+                    visible: TileVisible(false),
+                    ..default()
                 },
-                commands
-                    .spawn((
-                        TileBundle {
-                            position: {
-                                let mut position = TilePos {
-                                    x: (tile.px[0] / default_grid_size) as u32,
-                                    y: (tile.px[1] / default_grid_size) as u32,
-                                };
-
-                                position.y = map_tile_count_y - position.y - 1;
-                                position
-                            },
-                            tilemap_id: TilemapId(map_entity),
-                            texture_index: TileTextureIndex(tile.t as u32),
-                            // Hidden since we use a mesh to draw them anyways
-                            // these tiles are more of state managment really, since theyre useless in 3d
-                            visible: TileVisible(false),
-                            ..default()
-                        },
-                        Name::new(format!("Tile {}-{}", uid, index)),
-                    ))
-                    .id(),
+                Name::new(format!("Tile {}-{}", uid, index)),
             );
+
+            storage.set(&position, commands.spawn(bundle).id());
         }
 
         let grid_size = tile_size.into();
         let map_type = TilemapType::default();
 
         // Create the tilemap
-        commands.entity(map_entity).insert((
-            TilemapBundle {
-                grid_size,
-                map_type,
-                size,
-                storage,
-                texture: TilemapTexture::Single(texture),
-                tile_size,
-                transform: get_tilemap_center_transform(
-                    &size,
-                    &grid_size,
-                    &map_type,
-                    layer_id as f32,
-                ),
-                visibility: Visibility::Hidden,
-                ..default()
-            },
-            Name::new(format!("Tilemap #{}", uid)),
-        ));
+        let tilemap = commands
+            .entity(map_entity)
+            .insert((
+                TilemapBundle {
+                    grid_size,
+                    map_type,
+                    size,
+                    storage,
+                    texture: TilemapTexture::Single(texture),
+                    tile_size,
+                    transform: get_tilemap_center_transform(
+                        &size,
+                        &grid_size,
+                        &map_type,
+                        layer_id as f32,
+                    ),
+                    visibility: Visibility::Hidden,
+                    ..default()
+                },
+                Name::new(format!("Tilemap #{}", uid)),
+            ))
+            .id();
+
+        commands.send_event(SpawnMeshEvent { tilemap });
     }
 }
