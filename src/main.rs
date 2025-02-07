@@ -160,6 +160,53 @@ fn spawn_mesh(
             indices.append(offseted);
         }
 
+        let ldtk_map = maps.get(&map_asset.0).unwrap();
+
+        let tilesets = &ldtk_map.tilesets;
+
+        let image_handles: Vec<&Handle<Image>> = tilemap_texture.image_handles();
+        let texture: &&Handle<Image> = dbg!(&image_handles).get(0).unwrap();
+        let value: Handle<Image> = texture.clone_weak();
+
+        let image: Image = images.get(&value).unwrap().clone();
+        let mut images: Vec<Handle<Image>> = Vec::default();
+
+        let floor =
+            |tile_width, image_width| (image_width as f32 / tile_width as f32).floor() as usize;
+
+        let tile_width = 32;
+        let tile_height = 32;
+        let width = image.width() as usize;
+        let height = image.height() as usize;
+        for tile_y in 0..floor(tile_height, height) {
+            for tile_x in 0..floor(tile_width, width) {
+                let new_image_data: Vec<u8> = (0..tile_height)
+                    .into_iter()
+                    .flat_map(|y| {
+                        let start_index = tile_x + tile_y * width;
+                        let y_offset = width * y;
+                        let range =
+                            (start_index + y_offset) * 4..(start_index + tile_width + y_offset) * 4;
+                        &image.data[range]
+                    })
+                    .map(ToOwned::to_owned)
+                    .collect();
+                let new_image = Image::new(
+                    Extent3d {
+                        width: tile_width as u32,
+                        height: tile_height as u32,
+                        depth_or_array_layers: 1,
+                    },
+                    bevy::render::render_resource::TextureDimension::D2,
+                    new_image_data,
+                    image.texture_descriptor.format.clone(),
+                    image.asset_usage.clone(),
+                );
+                images.push(asset_server.add(new_image));
+            }
+        }
+        log::info!("finished {} {}", width, height);
+
         for (texture_index, (vertices, indices)) in mapped_vertices_to_textures {
             let mesh = Mesh::new(
                 PrimitiveTopology::TriangleList,
@@ -168,22 +215,7 @@ fn spawn_mesh(
             .with_inserted_attribute(Mesh::ATTRIBUTE_POSITION, vertices)
             .with_inserted_indices(Indices::U32(indices));
 
-            let ldtk_map = maps.get(&map_asset.0).unwrap();
-
-            let tilesets = &ldtk_map.tilesets;
-
-            let image_handles = tilemap_texture.image_handles();
-            let texture = dbg!(&image_handles).get(0).unwrap();
-            let value = texture.clone_weak();
-            let mut image = images.get(&value).unwrap().clone();
-
-            image.resize(Extent3d {
-                width: 32,
-                height: 32,
-                depth_or_array_layers: 0,
-            });
-
-            let material = StandardMaterial::from(asset_server.add(image));
+            let material = StandardMaterial::from(images[texture_index as usize].clone());
 
             let mesh_handle = asset_server.add(mesh);
             let material_handle = asset_server.add(material);
