@@ -268,7 +268,7 @@ fn spawn_map_components(commands: &mut Commands, ldtk_map: &LdtkMap, map_config:
                     texture_index: TileTextureIndex(tile.t as u32),
                     // Hidden since we use a mesh to draw them anyways
                     // these tiles are more of state managment really, since theyre useless in 3d
-                    visible: TileVisible(false),
+                    // visible: TileVisible(false),
                     ..default()
                 },
                 Name::new(format!("Tile {}-{}", uid, index)),
@@ -297,7 +297,7 @@ fn spawn_map_components(commands: &mut Commands, ldtk_map: &LdtkMap, map_config:
                         &map_type,
                         layer_id as f32,
                     ),
-                    visibility: Visibility::Hidden,
+                    // visibility: Visibility::Hidden,
                     ..default()
                 },
                 Name::new(format!("Tilemap #{}", uid)),
