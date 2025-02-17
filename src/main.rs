@@ -1,4 +1,6 @@
 use std::collections::HashMap;
+use std::fs::File;
+use std::io::Write;
 
 use bevy::asset::RenderAssetUsages;
 use bevy::color::palettes;
@@ -41,8 +43,13 @@ fn main() {
 }
 
 fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
-    // commands.spawn((Camera2d::default(), EditorCam::default()));
-    commands.spawn((Camera3d::default(), EditorCam::default()));
+    commands.spawn((
+        Camera3d::default(),
+        Transform::default()
+            .looking_at(Vec3::NEG_Y, Vec3::Y)
+            .with_translation(Vec3::new(0.0, 20.0, 0.0)),
+        EditorCam::default().with_initial_anchor_depth(20.0),
+    ));
 
     let tilemap = asset_server.load("tilemap.ldtk");
 
@@ -101,10 +108,11 @@ fn draw_mesh_vertices(
             let tile_pos = query.get(entity.unwrap()).unwrap();
             let x_pos = tile_pos.x as f32;
             let y_pos = tile_pos.y as f32;
-            vertices.push([x_pos, 0.0, y_pos]);
-            vertices.push([x_pos, 0.0, y_pos + 1.0]);
-            vertices.push([x_pos + 1.0, 0.0, y_pos + 1.0]);
-            vertices.push([x_pos + 1.0, 0.0, y_pos]);
+            let z_pos = index as f32 / 20.;
+            vertices.push([x_pos, z_pos, y_pos]);
+            vertices.push([x_pos, z_pos, y_pos + 1.0]);
+            vertices.push([x_pos + 1.0, z_pos, y_pos + 1.0]);
+            vertices.push([x_pos + 1.0, z_pos, y_pos]);
         }
     }
     for vertex in vertices {
@@ -132,14 +140,10 @@ fn spawn_mesh(
 
         let (tilemap_storage, tilemap_texture) = tilemaps.get(event.tilemap).unwrap();
 
-        for (index, entity) in tilemap_storage
-            .iter()
-            .enumerate()
-            .filter(|item| item.1.is_some())
-        {
+        for entity in tilemap_storage.iter().filter(|item| item.is_some()) {
             let (tile_pos, tile_texture) = tiles.get(entity.unwrap()).unwrap();
             let x_pos = tile_pos.x as f32;
-            let y_pos = tile_pos.y as f32;
+            let y_pos = -(tile_pos.y as f32);
 
             if !mapped_vertices_to_textures.contains_key(&tile_texture.0) {
                 mapped_vertices_to_textures.insert(tile_texture.0, Default::default());
@@ -149,10 +153,12 @@ fn spawn_mesh(
                 mapped_vertices_to_textures
                     .get_mut(&tile_texture.0)
                     .unwrap();
-            vertices.push([x_pos, 0.0, y_pos]);
-            vertices.push([x_pos, 0.0, y_pos + 1.0]);
-            vertices.push([x_pos + 1.0, 0.0, y_pos + 1.0]);
-            vertices.push([x_pos + 1.0, 0.0, y_pos]);
+            // let z_pos = index as f32 / 20.;
+            let z_pos = 0.;
+            vertices.push([x_pos, z_pos, y_pos]);
+            vertices.push([x_pos, z_pos, y_pos + 1.0]);
+            vertices.push([x_pos + 1.0, z_pos, y_pos + 1.0]);
+            vertices.push([x_pos + 1.0, z_pos, y_pos]);
             texture_uvs.push([0.0, 0.0]);
             texture_uvs.push([0.0, 1.0]);
             texture_uvs.push([1.0, 1.0]);
@@ -160,13 +166,21 @@ fn spawn_mesh(
 
             const FACE_INDICES: &[u32] = &[0, 1, 2, 0, 2, 3];
 
-            let offseted = &mut FACE_INDICES
+            let offseted: &mut Vec<u32> = &mut FACE_INDICES
                 .to_owned()
                 .into_iter()
-                .map(|value: u32| value + (index as u32 * 4))
+                .map(|value: u32| value + (vertices.len() as u32 - 4))
                 .collect();
             indices.append(offseted);
         }
+
+        // if let Ok(mut open) = File::options().create(true).write(true).open("log.ron") {
+        //     let _ = open.write(
+        //         ron::to_string(&mapped_vertices_to_textures)
+        //             .unwrap_or("none".to_owned())
+        //             .as_bytes(),
+        //     );
+        // };
 
         let texture: Handle<Image> = tilemap_texture.image_handles().get(0).unwrap().clone_weak();
 
@@ -266,8 +280,8 @@ fn spawn_mesh(
                 PrimitiveTopology::TriangleList,
                 RenderAssetUsages::RENDER_WORLD,
             )
-            .with_inserted_attribute(Mesh::ATTRIBUTE_POSITION, vertices)
             .with_inserted_indices(Indices::U32(indices))
+            .with_inserted_attribute(Mesh::ATTRIBUTE_POSITION, vertices)
             .with_inserted_attribute(Mesh::ATTRIBUTE_UV_0, texture_uvs);
 
             let material = StandardMaterial::from(image);
