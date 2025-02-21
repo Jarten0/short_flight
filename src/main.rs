@@ -1,9 +1,11 @@
 use std::collections::HashMap;
+use std::f32::consts::PI;
 use std::fs::File;
 use std::io::Write;
 
 use bevy::asset::RenderAssetUsages;
 use bevy::color::palettes;
+use bevy::gizmos::light::LightGizmoPlugin;
 use bevy::image::TextureFormatPixelInfo;
 use bevy::prelude::*;
 use bevy::render::mesh::{Indices, PrimitiveTopology};
@@ -42,13 +44,38 @@ fn main() {
         .run();
 }
 
-fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
+fn setup(
+    mut commands: Commands,
+    asset_server: Res<AssetServer>,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+) {
+    commands.spawn((
+        // DirectionalLight::default(),
+        // Transform::default().looking_to(Vec3::NEG_Y, Dir3::Y),
+        DirectionalLight {
+            illuminance: light_consts::lux::OVERCAST_DAY,
+            shadows_enabled: true,
+            ..default()
+        },
+        Transform {
+            translation: Vec3::new(0.0, 2.0, 0.0),
+            rotation: Quat::from_rotation_x(PI / -2.0),
+            ..default()
+        },
+        ShowLightGizmo::default(),
+    ));
     commands.spawn((
         Camera3d::default(),
         Transform::default()
             .looking_at(Vec3::NEG_Y, Vec3::Y)
             .with_translation(Vec3::new(0.0, 20.0, 0.0)),
         EditorCam::default().with_initial_anchor_depth(20.0),
+    ));
+    commands.spawn((
+        Mesh3d(meshes.add(Cuboid::new(1.0, 1.0, 1.0))),
+        MeshMaterial3d(materials.add(Color::srgb_u8(124, 144, 255))),
+        Transform::from_xyz(0.0, 0.5, 0.0),
     ));
 
     let tilemap = asset_server.load("tilemap.ldtk");
@@ -106,9 +133,9 @@ fn draw_mesh_vertices(
     for tilemap in tilemaps.iter() {
         for (index, entity) in tilemap.iter().enumerate().filter(|item| item.1.is_some()) {
             let tile_pos = query.get(entity.unwrap()).unwrap();
-            let x_pos = tile_pos.x as f32;
+            let x_pos = -(tile_pos.x as f32);
             let y_pos = tile_pos.y as f32;
-            let z_pos = index as f32 / 20.;
+            let z_pos = tile_pos.y as f32 / 2.;
             vertices.push([x_pos, z_pos, y_pos]);
             vertices.push([x_pos, z_pos, y_pos + 1.0]);
             vertices.push([x_pos + 1.0, z_pos, y_pos + 1.0]);
@@ -135,34 +162,38 @@ fn spawn_mesh(
 
         let mut mapped_vertices_to_textures: HashMap<
             u32,
-            (Vec<[f32; 3]>, Vec<u32>, Vec<[f32; 2]>),
+            (Vec<[f32; 3]>, Vec<u32>, Vec<[f32; 2]>, Vec<[f32; 3]>),
         > = HashMap::new();
 
         let (tilemap_storage, tilemap_texture) = tilemaps.get(event.tilemap).unwrap();
 
         for entity in tilemap_storage.iter().filter(|item| item.is_some()) {
             let (tile_pos, tile_texture) = tiles.get(entity.unwrap()).unwrap();
-            let x_pos = tile_pos.x as f32;
-            let y_pos = -(tile_pos.y as f32);
+            let x_pos = -(tile_pos.x as f32);
+            let y_pos = (tile_pos.y as f32);
 
             if !mapped_vertices_to_textures.contains_key(&tile_texture.0) {
                 mapped_vertices_to_textures.insert(tile_texture.0, Default::default());
             }
 
-            let (ref mut vertices, ref mut indices, ref mut texture_uvs) =
+            let (ref mut vertices, ref mut indices, ref mut texture_uvs, ref mut normals) =
                 mapped_vertices_to_textures
                     .get_mut(&tile_texture.0)
                     .unwrap();
             // let z_pos = index as f32 / 20.;
-            let z_pos = 0.;
+            let z_pos = 0. + (y_pos / 2.0);
             vertices.push([x_pos, z_pos, y_pos]);
-            vertices.push([x_pos, z_pos, y_pos + 1.0]);
-            vertices.push([x_pos + 1.0, z_pos, y_pos + 1.0]);
+            vertices.push([x_pos, z_pos + 0.5, y_pos + 1.0]);
+            vertices.push([x_pos + 1.0, z_pos + 0.5, y_pos + 1.0]);
             vertices.push([x_pos + 1.0, z_pos, y_pos]);
             texture_uvs.push([0.0, 0.0]);
             texture_uvs.push([0.0, 1.0]);
             texture_uvs.push([1.0, 1.0]);
             texture_uvs.push([1.0, 0.0]);
+            normals.push([0.0, 1.0, 0.0]);
+            normals.push([0.0, 1.0, 0.0]);
+            normals.push([0.0, 1.0, 0.0]);
+            normals.push([0.0, 1.0, 0.0]);
 
             const FACE_INDICES: &[u32] = &[0, 1, 2, 0, 2, 3];
 
@@ -174,21 +205,10 @@ fn spawn_mesh(
             indices.append(offseted);
         }
 
-        // if let Ok(mut open) = File::options().create(true).write(true).open("log.ron") {
-        //     let _ = open.write(
-        //         ron::to_string(&mapped_vertices_to_textures)
-        //             .unwrap_or("none".to_owned())
-        //             .as_bytes(),
-        //     );
-        // };
-
         let texture: Handle<Image> = tilemap_texture.image_handles().get(0).unwrap().clone_weak();
 
         let tileset_texture: Image = images.get(&texture).unwrap().clone();
         let mut textures: Vec<Handle<Image>> = Vec::default();
-
-        // // let floor =
-        // //     |tile_width, image_width| (image_width as f32 / tile_width as f32).floor() as usize;
 
         let tile_width = 32;
         let tile_height = 32;
@@ -238,40 +258,12 @@ fn spawn_mesh(
                 tileset_texture.texture_descriptor.format.clone(),
                 tileset_texture.asset_usage.clone(),
             );
-            // assert_eq!(new_image.data.len(), width * height * bytes_per_pixel);
             textures.push(asset_server.add(new_image));
         }
 
-        // for tile_y in 0..floor(tile_height, height) {
-        //     for tile_x in 0..floor(tile_width, width) {
-        //         let new_image_data: Vec<u8> = (0..tile_height)
-        //             .into_iter()
-        //             .flat_map(|y| {
-        //                 let start_index = tile_x + tile_y * width;
-        //                 let y_offset = width * y;
-        //                 let range = (start_index + y_offset) * bytes_per_pixel
-        //                     ..(start_index + tile_width + y_offset) * bytes_per_pixel;
-        //                 &tileset_texture.data[range]
-        //             })
-        //             .map(ToOwned::to_owned)
-        //             .collect();
-        //         let new_image = Image::new(
-        //             Extent3d {
-        //                 width: tile_width as u32,
-        //                 height: tile_height as u32,
-        //                 depth_or_array_layers: 1,
-        //             },
-        //             bevy::render::render_resource::TextureDimension::D2,
-        //             new_image_data,
-        //             tileset_texture.texture_descriptor.format.clone(),
-        //             tileset_texture.asset_usage.clone(),
-        //         );
-        //         textures.push(asset_server.add(new_image));
-        //     }
-        // }
-        // log::info!("finished {}x{} = {}", width, height, textures.len());
-
-        for (texture_index, (vertices, indices, texture_uvs)) in mapped_vertices_to_textures {
+        for (texture_index, (vertices, indices, texture_uvs, normals)) in
+            mapped_vertices_to_textures
+        {
             let image = textures[texture_index as usize].clone();
 
             log::info!("spawning mesh with {} vertices, {} indices, {} texture uvs, and this texture: {:?} from index {}", vertices.len(), indices.len(), texture_uvs.len(), &image, texture_index);
@@ -282,7 +274,8 @@ fn spawn_mesh(
             )
             .with_inserted_indices(Indices::U32(indices))
             .with_inserted_attribute(Mesh::ATTRIBUTE_POSITION, vertices)
-            .with_inserted_attribute(Mesh::ATTRIBUTE_UV_0, texture_uvs);
+            .with_inserted_attribute(Mesh::ATTRIBUTE_UV_0, texture_uvs)
+            .with_inserted_attribute(Mesh::ATTRIBUTE_NORMAL, normals);
 
             let material = StandardMaterial::from(image);
 
@@ -290,11 +283,8 @@ fn spawn_mesh(
                 Mesh3d(asset_server.add(mesh)),
                 MeshMaterial3d(asset_server.add(material)),
                 Transform::from_xyz(0.0, 0.0, 0.0),
+                Name::new(format!("DrawMesh {}", texture_index)),
             ));
         }
     }
 }
-
-// wouldve named it 3DMode, but thats not allowed ig
-#[derive(Debug, Default, Clone, Resource, Reflect)]
-pub struct Mode3D(pub f32);
