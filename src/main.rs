@@ -1,25 +1,18 @@
-use std::collections::HashMap;
-use std::f32::consts::PI;
-use std::fs::File;
-use std::io::Write;
-
+#![feature(int_roundings)]
 use bevy::asset::RenderAssetUsages;
-use bevy::color::palettes;
-use bevy::gizmos::light::LightGizmoPlugin;
-use bevy::image::TextureFormatPixelInfo;
 use bevy::prelude::*;
 use bevy::render::mesh::{Indices, PrimitiveTopology};
-use bevy::render::render_resource::{
-    Extent3d, Texture, TextureAspect, TextureFormat, TextureViewDescriptor,
-};
 use bevy_ecs_tilemap::prelude::*;
 use bevy_editor_cam::prelude::*;
 use bevy_inspector_egui::quick::WorldInspectorPlugin;
 use bevy_picking::prelude::*;
+use image::ImageBuffer;
 use ldtk::{
     initialize_immediate_tilemaps, process_loaded_tile_maps, LdtkMap, LdtkMapBundle, LdtkMapHandle,
-    LdtkPlugin,
+    LdtkPlugin, TileDepth,
 };
+use std::collections::HashMap;
+use std::f32::consts::PI;
 
 pub mod ldtk;
 
@@ -129,22 +122,22 @@ fn draw_mesh_vertices(
     tilemaps: Query<&TileStorage>,
     query: Query<&TilePos>,
 ) {
-    let mut vertices: Vec<[f32; 3]> = vec![];
-    for tilemap in tilemaps.iter() {
-        for (index, entity) in tilemap.iter().enumerate().filter(|item| item.1.is_some()) {
-            let tile_pos = query.get(entity.unwrap()).unwrap();
-            let x_pos = -(tile_pos.x as f32);
-            let y_pos = tile_pos.y as f32;
-            let z_pos = tile_pos.y as f32 / 2.;
-            vertices.push([x_pos, z_pos, y_pos]);
-            vertices.push([x_pos, z_pos, y_pos + 1.0]);
-            vertices.push([x_pos + 1.0, z_pos, y_pos + 1.0]);
-            vertices.push([x_pos + 1.0, z_pos, y_pos]);
-        }
-    }
-    for vertex in vertices {
-        gizmos.circle(Vec3::from(vertex), 0.04, palettes::basic::PURPLE);
-    }
+    // let mut vertices: Vec<[f32; 3]> = vec![];
+    // for tilemap in tilemaps.iter() {
+    //     for (index, entity) in tilemap.iter().enumerate().filter(|item| item.1.is_some()) {
+    //         let tile_pos = query.get(entity.unwrap()).unwrap();
+    //         let x_pos = -(tile_pos.x as f32);
+    //         let y_pos = tile_pos.y as f32;
+    //         let z_pos = tile_pos.y as f32 / 2.;
+    //         vertices.push([x_pos, z_pos, y_pos]);
+    //         vertices.push([x_pos, z_pos, y_pos + 1.0]);
+    //         vertices.push([x_pos + 1.0, z_pos, y_pos + 1.0]);
+    //         vertices.push([x_pos + 1.0, z_pos, y_pos]);
+    //     }
+    // }
+    // for vertex in vertices {
+    //     gizmos.circle(Vec3::from(vertex), 0.04, palettes::basic::PURPLE);
+    // }
 }
 
 fn spawn_mesh(
@@ -155,7 +148,7 @@ fn spawn_mesh(
     images: Res<Assets<Image>>,
     map_asset: Single<&LdtkMapHandle>,
     tilemaps: Query<(&TileStorage, &TilemapTexture)>,
-    tiles: Query<(&TilePos, &TileTextureIndex)>,
+    tiles: Query<(&TilePos, &TileTextureIndex, &TileDepth)>,
 ) {
     for event in events.read() {
         log::info!("Spawning new mesh");
@@ -168,9 +161,9 @@ fn spawn_mesh(
         let (tilemap_storage, tilemap_texture) = tilemaps.get(event.tilemap).unwrap();
 
         for entity in tilemap_storage.iter().filter(|item| item.is_some()) {
-            let (tile_pos, tile_texture) = tiles.get(entity.unwrap()).unwrap();
+            let (tile_pos, tile_texture, tile_depth) = tiles.get(entity.unwrap()).unwrap();
             let x_pos = -(tile_pos.x as f32);
-            let y_pos = (tile_pos.y as f32);
+            let y_pos = tile_pos.y as f32;
 
             if !mapped_vertices_to_textures.contains_key(&tile_texture.0) {
                 mapped_vertices_to_textures.insert(tile_texture.0, Default::default());
@@ -180,11 +173,10 @@ fn spawn_mesh(
                 mapped_vertices_to_textures
                     .get_mut(&tile_texture.0)
                     .unwrap();
-            // let z_pos = index as f32 / 20.;
-            let z_pos = 0. + (y_pos / 2.0);
+            let z_pos = tile_depth.0 as f32;
             vertices.push([x_pos, z_pos, y_pos]);
-            vertices.push([x_pos, z_pos + 0.5, y_pos + 1.0]);
-            vertices.push([x_pos + 1.0, z_pos + 0.5, y_pos + 1.0]);
+            vertices.push([x_pos, z_pos, y_pos + 1.0]);
+            vertices.push([x_pos + 1.0, z_pos, y_pos + 1.0]);
             vertices.push([x_pos + 1.0, z_pos, y_pos]);
             texture_uvs.push([0.0, 0.0]);
             texture_uvs.push([0.0, 1.0]);
@@ -205,60 +197,42 @@ fn spawn_mesh(
             indices.append(offseted);
         }
 
-        let texture: Handle<Image> = tilemap_texture.image_handles().get(0).unwrap().clone_weak();
+        let image_handles = tilemap_texture.image_handles();
+        let Some(texture) = image_handles.get(0) else {
+            log::error!("Could not find the tilemap texture!");
+            continue;
+        };
 
-        let tileset_texture: Image = images.get(&texture).unwrap().clone();
+        let Some(get) = images.get(*texture) else {
+            log::error!("Could not find tilemap texture {:?}!", texture);
+            continue;
+        };
+
+        let tileset_texture: Image = get.clone();
         let mut textures: Vec<Handle<Image>> = Vec::default();
 
         let tile_width = 32;
         let tile_height = 32;
-        let width = tileset_texture.width() as usize;
-        let height = tileset_texture.height() as usize;
+        let image_width = tileset_texture.width();
+        let image_height = tileset_texture.height();
 
-        assert!(
-            !tileset_texture.is_compressed(),
-            "cannot effectively resize compressed textures"
+        let x = image_width.div_floor(tile_width);
+        let y = image_height.div_floor(tile_height);
+
+        let base_image = image::DynamicImage::ImageRgba8(
+            ImageBuffer::from_raw(image_width, image_height, tileset_texture.data).unwrap(),
         );
 
-        let bytes_per_pixel = tileset_texture.data.len() / (width * height);
-        assert_eq!(
-            bytes_per_pixel,
-            tileset_texture.texture_descriptor.format.pixel_size()
-        );
+        for y in 0..y {
+            for x in 0..x {
+                let new_image = Image::from_dynamic(
+                    base_image.crop_imm(x * tile_width, y * tile_height, tile_width, tile_height),
+                    true,
+                    RenderAssetUsages::RENDER_WORLD,
+                );
 
-        // split up the image into a list of pixel lines
-        let lines: Vec<&[u8]> = tileset_texture
-            .data
-            .chunks_exact(width * bytes_per_pixel)
-            .collect();
-        // bundle up each set of lines
-        let chunked_lines = lines.chunks_exact(tile_height);
-        // iterate over each bundle of lines and get x..x+width bytes of each line
-        for x in 0..(width / tile_width) {
-            let new_data: Vec<u8> = chunked_lines
-                .clone()
-                .flat_map(|chunk| {
-                    chunk.iter().map(|line| {
-                        (line[x * tile_width * bytes_per_pixel
-                            ..(x + 1) * tile_width * bytes_per_pixel])
-                            .to_owned()
-                    })
-                })
-                .flatten()
-                .collect();
-
-            let new_image = Image::new(
-                Extent3d {
-                    width: tile_width as u32,
-                    height: tile_height as u32,
-                    depth_or_array_layers: 1,
-                },
-                bevy::render::render_resource::TextureDimension::D2,
-                new_data,
-                tileset_texture.texture_descriptor.format.clone(),
-                tileset_texture.asset_usage.clone(),
-            );
-            textures.push(asset_server.add(new_image));
+                textures.push(asset_server.add(new_image));
+            }
         }
 
         for (texture_index, (vertices, indices, texture_uvs, normals)) in
@@ -270,7 +244,7 @@ fn spawn_mesh(
 
             let mesh = Mesh::new(
                 PrimitiveTopology::TriangleList,
-                RenderAssetUsages::RENDER_WORLD,
+                RenderAssetUsages::RENDER_WORLD | RenderAssetUsages::MAIN_WORLD,
             )
             .with_inserted_indices(Indices::U32(indices))
             .with_inserted_attribute(Mesh::ATTRIBUTE_POSITION, vertices)

@@ -271,6 +271,7 @@ fn spawn_map_components(commands: &mut Commands, ldtk_map: &LdtkMap, map_config:
                     // visible: TileVisible(false),
                     ..default()
                 },
+                TileDepth(tile.t),
                 Name::new(format!("Tile {}-{}", uid, index)),
             );
 
@@ -307,3 +308,6 @@ fn spawn_map_components(commands: &mut Commands, ldtk_map: &LdtkMap, map_config:
         commands.send_event(SpawnMeshEvent { tilemap });
     }
 }
+
+#[derive(Debug, Reflect, Component, Default, Clone)]
+pub struct TileDepth(pub i64);
