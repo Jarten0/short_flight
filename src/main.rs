@@ -1,20 +1,21 @@
 #![feature(int_roundings)]
 use bevy::asset::RenderAssetUsages;
+use bevy::color::palettes;
+use bevy::color::palettes::tailwind::{PINK_100, RED_500};
 use bevy::prelude::*;
 use bevy::render::mesh::{Indices, PrimitiveTopology};
 use bevy_ecs_tilemap::prelude::*;
 use bevy_editor_cam::prelude::*;
 use bevy_inspector_egui::quick::WorldInspectorPlugin;
+use bevy_picking::pointer::PointerInteraction;
 use bevy_picking::prelude::*;
 use image::ImageBuffer;
-use ldtk::{
-    initialize_immediate_tilemaps, process_loaded_tile_maps, LdtkMap, LdtkMapBundle, LdtkMapHandle,
-    LdtkPlugin, TileDepth,
+use short_flight::ldtk::{
+    self, initialize_immediate_tilemaps, process_loaded_tile_maps, LdtkMap, LdtkMapBundle,
+    LdtkMapHandle, LdtkPlugin, SpawnMeshEvent, TileDepth,
 };
 use std::collections::HashMap;
 use std::f32::consts::PI;
-
-pub mod ldtk;
 
 fn main() {
     App::new()
@@ -22,6 +23,7 @@ fn main() {
         .add_plugins(WorldInspectorPlugin::default())
         .add_plugins(TilemapPlugin)
         .add_plugins(LdtkPlugin)
+        .add_plugins(MeshPickingPlugin)
         .add_plugins(DefaultEditorCamPlugins)
         .add_systems(PreStartup, setup)
         .add_systems(Startup, spawn_protag)
@@ -30,7 +32,7 @@ fn main() {
             (
                 update_protag,
                 spawn_mesh.after(process_loaded_tile_maps),
-                draw_mesh_vertices,
+                draw_mesh_intersections,
             ),
         )
         .add_event::<SpawnMeshEvent>()
@@ -65,11 +67,13 @@ fn setup(
             .with_translation(Vec3::new(0.0, 20.0, 0.0)),
         EditorCam::default().with_initial_anchor_depth(20.0),
     ));
-    commands.spawn((
-        Mesh3d(meshes.add(Cuboid::new(1.0, 1.0, 1.0))),
-        MeshMaterial3d(materials.add(Color::srgb_u8(124, 144, 255))),
-        Transform::from_xyz(0.0, 0.5, 0.0),
-    ));
+    commands
+        .spawn((
+            Mesh3d(meshes.add(Cuboid::new(1.0, 1.0, 1.0))),
+            MeshMaterial3d(materials.add(Color::srgb_u8(124, 144, 255))),
+            Transform::from_xyz(0.0, 0.5, 0.0),
+        ))
+        .observe(move_on_drag);
 
     let tilemap = asset_server.load("tilemap.ldtk");
 
@@ -109,37 +113,6 @@ fn update_protag(kb: Res<ButtonInput<KeyCode>>, mut protag: Single<(&mut Transfo
     }
 }
 
-#[derive(Debug, Event, Reflect, Clone)]
-pub struct SpawnMeshEvent {
-    tilemap: Entity,
-}
-
-fn draw_mesh_vertices(
-    mut events: EventReader<SpawnMeshEvent>,
-    mut commands: Commands,
-    mut gizmos: Gizmos,
-    asset_server: Res<AssetServer>,
-    tilemaps: Query<&TileStorage>,
-    query: Query<&TilePos>,
-) {
-    // let mut vertices: Vec<[f32; 3]> = vec![];
-    // for tilemap in tilemaps.iter() {
-    //     for (index, entity) in tilemap.iter().enumerate().filter(|item| item.1.is_some()) {
-    //         let tile_pos = query.get(entity.unwrap()).unwrap();
-    //         let x_pos = -(tile_pos.x as f32);
-    //         let y_pos = tile_pos.y as f32;
-    //         let z_pos = tile_pos.y as f32 / 2.;
-    //         vertices.push([x_pos, z_pos, y_pos]);
-    //         vertices.push([x_pos, z_pos, y_pos + 1.0]);
-    //         vertices.push([x_pos + 1.0, z_pos, y_pos + 1.0]);
-    //         vertices.push([x_pos + 1.0, z_pos, y_pos]);
-    //     }
-    // }
-    // for vertex in vertices {
-    //     gizmos.circle(Vec3::from(vertex), 0.04, palettes::basic::PURPLE);
-    // }
-}
-
 fn spawn_mesh(
     mut events: EventReader<SpawnMeshEvent>,
     mut commands: Commands,
@@ -148,32 +121,41 @@ fn spawn_mesh(
     images: Res<Assets<Image>>,
     map_asset: Single<&LdtkMapHandle>,
     tilemaps: Query<(&TileStorage, &TilemapTexture)>,
-    tiles: Query<(&TilePos, &TileTextureIndex, &TileDepth)>,
+    tiles: Query<(&TilePos, Option<&TileTextureIndex>, &TileDepth)>,
 ) {
     for event in events.read() {
         log::info!("Spawning new mesh");
 
-        let mut mapped_vertices_to_textures: HashMap<
-            u32,
-            (Vec<[f32; 3]>, Vec<u32>, Vec<[f32; 2]>, Vec<[f32; 3]>),
+        let mut mesh_information: HashMap<
+            Entity,
+            (
+                Vec<[f32; 3]>,
+                Vec<u32>,
+                Vec<[f32; 2]>,
+                Vec<[f32; 3]>,
+                Option<usize>,
+            ),
         > = HashMap::new();
 
         let (tilemap_storage, tilemap_texture) = tilemaps.get(event.tilemap).unwrap();
 
-        for entity in tilemap_storage.iter().filter(|item| item.is_some()) {
-            let (tile_pos, tile_texture, tile_depth) = tiles.get(entity.unwrap()).unwrap();
+        for entity in tilemap_storage.iter().filter_map(|item| *item) {
+            let (tile_pos, tile_texture, tile_depth) = tiles.get(entity).unwrap();
             let x_pos = -(tile_pos.x as f32);
             let y_pos = tile_pos.y as f32;
 
-            if !mapped_vertices_to_textures.contains_key(&tile_texture.0) {
-                mapped_vertices_to_textures.insert(tile_texture.0, Default::default());
-            }
+            mesh_information.insert(entity, Default::default());
 
-            let (ref mut vertices, ref mut indices, ref mut texture_uvs, ref mut normals) =
-                mapped_vertices_to_textures
-                    .get_mut(&tile_texture.0)
-                    .unwrap();
-            let z_pos = tile_depth.0 as f32;
+            // pull a reference instead of declaring so that changing type declaration is easier
+            let (
+                ref mut vertices,
+                ref mut indices,
+                ref mut texture_uvs,
+                ref mut normals,
+                ref mut texture_index,
+            ) = mesh_information.get_mut(&entity).unwrap();
+
+            let z_pos = 0.0;
             vertices.push([x_pos, z_pos, y_pos]);
             vertices.push([x_pos, z_pos, y_pos + 1.0]);
             vertices.push([x_pos + 1.0, z_pos, y_pos + 1.0]);
@@ -186,6 +168,7 @@ fn spawn_mesh(
             normals.push([0.0, 1.0, 0.0]);
             normals.push([0.0, 1.0, 0.0]);
             normals.push([0.0, 1.0, 0.0]);
+            tile_texture.map(|texture| texture_index.insert(texture.0 as usize));
 
             const FACE_INDICES: &[u32] = &[0, 1, 2, 0, 2, 3];
 
@@ -235,30 +218,95 @@ fn spawn_mesh(
             }
         }
 
-        for (texture_index, (vertices, indices, texture_uvs, normals)) in
-            mapped_vertices_to_textures
-        {
-            let image = textures[texture_index as usize].clone();
+        log::info!("Spliced {} images from {:?}", textures.len(), texture);
 
-            log::info!("spawning mesh with {} vertices, {} indices, {} texture uvs, and this texture: {:?} from index {}", vertices.len(), indices.len(), texture_uvs.len(), &image, texture_index);
+        let texture_materials: Vec<Handle<StandardMaterial>> = textures
+            .into_iter()
+            .map(|image_handle| asset_server.add(StandardMaterial::from(image_handle.clone())))
+            .collect();
+        let hovering: Handle<StandardMaterial> =
+            asset_server.add(StandardMaterial::from_color(palettes::basic::GREEN));
+        let selected: Handle<StandardMaterial> =
+            asset_server.add(StandardMaterial::from_color(palettes::basic::LIME));
+        let missing: Handle<StandardMaterial> =
+            asset_server.add(StandardMaterial::from_color(palettes::basic::PURPLE));
+
+        let mut mesh_bundle_inserts = HashMap::new();
+
+        for (entity, (vertices, indices, texture_uvs, normals, texture_index)) in mesh_information {
+            // log::info!("spawning mesh with {} vertices, {} indices, {} texture uvs, and this texture index {:?}", vertices.len(), indices.len(), texture_uvs.len(), texture_index);
 
             let mesh = Mesh::new(
                 PrimitiveTopology::TriangleList,
-                RenderAssetUsages::RENDER_WORLD | RenderAssetUsages::MAIN_WORLD,
+                RenderAssetUsages::RENDER_WORLD,
             )
             .with_inserted_indices(Indices::U32(indices))
             .with_inserted_attribute(Mesh::ATTRIBUTE_POSITION, vertices)
             .with_inserted_attribute(Mesh::ATTRIBUTE_UV_0, texture_uvs)
             .with_inserted_attribute(Mesh::ATTRIBUTE_NORMAL, normals);
 
-            let material = StandardMaterial::from(image);
+            let material = texture_index
+                .map(|texture_index| texture_materials.get(texture_index).unwrap().clone())
+                // .unwrap_or(None)
+                .unwrap_or(missing.clone());
 
-            commands.spawn((
-                Mesh3d(asset_server.add(mesh)),
-                MeshMaterial3d(asset_server.add(material)),
-                Transform::from_xyz(0.0, 0.0, 0.0),
-                Name::new(format!("DrawMesh {}", texture_index)),
-            ));
+            commands
+                .entity(entity)
+                .observe(update_material_on::<Pointer<Over>>(hovering.clone()))
+                .observe(update_material_on::<Pointer<Out>>(material.clone()))
+                .observe(update_material_on::<Pointer<Down>>(selected.clone()))
+                .observe(update_material_on::<Pointer<Up>>(hovering.clone()))
+                .observe(move_on_drag);
+
+            mesh_bundle_inserts.insert(
+                entity,
+                (
+                    Mesh3d(asset_server.add(mesh)),
+                    MeshMaterial3d(material),
+                    Transform::from_xyz(0.0, 0.0, 0.0),
+                    // Name::new(format!("DrawMesh {:?}", texture_index)),
+                ),
+            );
         }
+
+        commands.insert_batch(mesh_bundle_inserts);
+    }
+}
+
+/// Returns an observer that updates the entity's material to the one specified.
+fn update_material_on<E>(
+    new_material: Handle<StandardMaterial>,
+) -> impl Fn(Trigger<E>, Query<&mut MeshMaterial3d<StandardMaterial>>) {
+    // An observer closure that captures `new_material`. We do this to avoid needing to write four
+    // versions of this observer, each triggered by a different event and with a different hardcoded
+    // material. Instead, the event type is a generic, and the material is passed in.
+    move |trigger, mut query| {
+        if let Ok(mut material) = query.get_mut(trigger.entity()) {
+            material.0 = new_material.clone();
+        }
+    }
+}
+
+/// An observer to rotate an entity when it is dragged
+fn move_on_drag(
+    drag: Trigger<Pointer<Drag>>,
+    mut transforms: Query<&mut Transform>,
+    // mut camera: Single<&mut EditorCam>,
+) {
+    // camera.enabled_motion.pan = false;
+    let mut transform = transforms.get_mut(drag.entity()).unwrap();
+    transform.rotate_y(drag.delta.x * 0.02);
+    transform.rotate_x(drag.delta.y * 0.02);
+}
+
+/// A system that draws hit indicators for every pointer.
+fn draw_mesh_intersections(pointers: Query<&PointerInteraction>, mut gizmos: Gizmos) {
+    for (point, normal) in pointers
+        .iter()
+        .filter_map(|interaction| interaction.get_nearest_hit())
+        .filter_map(|(_entity, hit)| hit.position.zip(hit.normal))
+    {
+        gizmos.sphere(point, 0.05, RED_500);
+        gizmos.arrow(point, point + normal.normalize() * 0.5, PINK_100);
     }
 }

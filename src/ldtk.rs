@@ -16,8 +16,6 @@ use bevy::{
 };
 use bevy_ecs_tilemap::map::TilemapType;
 
-use crate::SpawnMeshEvent;
-
 #[derive(Default)]
 pub struct LdtkPlugin;
 
@@ -311,3 +309,8 @@ fn spawn_map_components(commands: &mut Commands, ldtk_map: &LdtkMap, map_config:
 
 #[derive(Debug, Reflect, Component, Default, Clone)]
 pub struct TileDepth(pub i64);
+
+#[derive(Debug, Event, Reflect, Clone)]
+pub struct SpawnMeshEvent {
+    pub tilemap: Entity,
+}

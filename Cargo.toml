@@ -2,6 +2,7 @@
 name = "short_flight"
 version = "0.1.0"
 edition = "2021"
+default-run = "short_flight"
 
 # Enable a small amount of optimization in the dev profile.
 [profile.dev]
