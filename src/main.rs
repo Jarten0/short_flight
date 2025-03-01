@@ -17,9 +17,12 @@ use short_flight::ldtk::{
 use std::collections::HashMap;
 use std::f32::consts::PI;
 
+mod player;
+
 fn main() {
     App::new()
         .add_plugins(DefaultPlugins)
+        .add_plugins(player::ShayminPlugin)
         .add_plugins(WorldInspectorPlugin::default())
         .add_plugins(TilemapPlugin)
         .add_plugins(LdtkPlugin)
@@ -33,6 +36,7 @@ fn main() {
                 update_protag,
                 spawn_mesh.after(process_loaded_tile_maps),
                 draw_mesh_intersections,
+                pause_on_space,
             ),
         )
         .add_event::<SpawnMeshEvent>()
@@ -64,6 +68,7 @@ fn setup(
         Camera3d::default(),
         Transform::default()
             .looking_at(Vec3::NEG_Y, Vec3::Y)
+            .with_rotation(Quat::from_rotation_x(f32::to_radians(-90.0)))
             .with_translation(Vec3::new(0.0, 20.0, 0.0)),
         EditorCam::default().with_initial_anchor_depth(20.0),
     ));
@@ -141,8 +146,8 @@ fn spawn_mesh(
 
         for entity in tilemap_storage.iter().filter_map(|item| *item) {
             let (tile_pos, tile_texture, tile_depth) = tiles.get(entity).unwrap();
-            let x_pos = -(tile_pos.x as f32);
-            let y_pos = tile_pos.y as f32;
+            let x_pos = tile_pos.x as f32;
+            let y_pos = -(tile_pos.y as f32);
 
             mesh_information.insert(entity, Default::default());
 
@@ -155,19 +160,16 @@ fn spawn_mesh(
                 ref mut texture_index,
             ) = mesh_information.get_mut(&entity).unwrap();
 
-            let z_pos = 0.0;
-            vertices.push([x_pos, z_pos, y_pos]);
-            vertices.push([x_pos, z_pos, y_pos + 1.0]);
-            vertices.push([x_pos + 1.0, z_pos, y_pos + 1.0]);
-            vertices.push([x_pos + 1.0, z_pos, y_pos]);
-            texture_uvs.push([0.0, 0.0]);
-            texture_uvs.push([0.0, 1.0]);
-            texture_uvs.push([1.0, 1.0]);
-            texture_uvs.push([1.0, 0.0]);
-            normals.push([0.0, 1.0, 0.0]);
-            normals.push([0.0, 1.0, 0.0]);
-            normals.push([0.0, 1.0, 0.0]);
-            normals.push([0.0, 1.0, 0.0]);
+            let vertex_data = [
+                ([x_pos, 0.0, y_pos], [0.0, 0.0], [0.0, 1.0, 0.0]),
+                ([x_pos, 0.0, y_pos + 1.0], [0.0, 1.0], [0.0, 1.0, 0.0]),
+                ([x_pos + 1.0, 0.0, y_pos + 1.0], [1.0, 1.0], [0.0, 1.0, 0.0]),
+                ([x_pos + 1.0, 0.0, y_pos], [1.0, 0.0], [0.0, 1.0, 0.0]),
+            ];
+            *vertices = vertex_data.into_iter().map(|(v, _, _)| v).collect();
+            *texture_uvs = vertex_data.into_iter().map(|(_, uv, _)| uv).collect();
+            *normals = vertex_data.into_iter().map(|(_, _, n)| n).collect();
+
             tile_texture.map(|texture| texture_index.insert(texture.0 as usize));
 
             const FACE_INDICES: &[u32] = &[0, 1, 2, 0, 2, 3];
@@ -238,12 +240,12 @@ fn spawn_mesh(
 
             let mesh = Mesh::new(
                 PrimitiveTopology::TriangleList,
-                RenderAssetUsages::RENDER_WORLD,
+                RenderAssetUsages::default(),
             )
-            .with_inserted_indices(Indices::U32(indices))
             .with_inserted_attribute(Mesh::ATTRIBUTE_POSITION, vertices)
             .with_inserted_attribute(Mesh::ATTRIBUTE_UV_0, texture_uvs)
-            .with_inserted_attribute(Mesh::ATTRIBUTE_NORMAL, normals);
+            .with_inserted_attribute(Mesh::ATTRIBUTE_NORMAL, normals)
+            .with_inserted_indices(Indices::U32(indices));
 
             let material = texture_index
                 .map(|texture_index| texture_materials.get(texture_index).unwrap().clone())
@@ -291,12 +293,25 @@ fn update_material_on<E>(
 fn move_on_drag(
     drag: Trigger<Pointer<Drag>>,
     mut transforms: Query<&mut Transform>,
-    // mut camera: Single<&mut EditorCam>,
+    kb: Res<ButtonInput<KeyCode>>,
 ) {
-    // camera.enabled_motion.pan = false;
+    if (drag.button != PointerButton::Primary) {
+        return;
+    }
     let mut transform = transforms.get_mut(drag.entity()).unwrap();
-    transform.rotate_y(drag.delta.x * 0.02);
-    transform.rotate_x(drag.delta.y * 0.02);
+    transform.translation.y -= drag.delta.y * 0.01;
+    if kb.pressed(KeyCode::KeyR) {
+        transform.translation.y = (transform.translation.y * 10.0).round() / 10.0
+    }
+
+    // transform.rotate_x(drag.delta.y * 0.02);
+}
+
+// lock the camera in place when space is held
+fn pause_on_space(mut camera: Query<&mut EditorCam>, kb: Res<ButtonInput<KeyCode>>) {
+    camera
+        .iter_mut()
+        .for_each(|mut camera| camera.enabled_motion.pan = !kb.pressed(KeyCode::Space));
 }
 
 /// A system that draws hit indicators for every pointer.
