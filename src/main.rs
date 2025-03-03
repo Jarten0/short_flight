@@ -16,6 +16,8 @@ use short_flight::ldtk::{
 };
 use std::collections::HashMap;
 use std::f32::consts::PI;
+use std::fs::File;
+use std::io::Write;
 
 mod player;
 
@@ -29,29 +31,31 @@ fn main() {
         .add_plugins(MeshPickingPlugin)
         .add_plugins(DefaultEditorCamPlugins)
         .add_systems(PreStartup, setup)
-        .add_systems(Startup, spawn_protag)
         .add_systems(
             Update,
             (
-                update_protag,
                 spawn_mesh.after(process_loaded_tile_maps),
                 draw_mesh_intersections,
                 pause_on_space,
+                (
+                    call_save_event,
+                    |mut commands: Commands, mut event_reader: EventReader<SaveEvent>| {
+                        for event in event_reader.read() {
+                            commands.trigger(*event);
+                        }
+                    },
+                )
+                    .chain(),
             ),
         )
         .add_event::<SpawnMeshEvent>()
+        .add_event::<SaveEvent>()
+        .add_observer(save_tile_data)
         .run();
 }
 
-fn setup(
-    mut commands: Commands,
-    asset_server: Res<AssetServer>,
-    mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<StandardMaterial>>,
-) {
+fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
     commands.spawn((
-        // DirectionalLight::default(),
-        // Transform::default().looking_to(Vec3::NEG_Y, Dir3::Y),
         DirectionalLight {
             illuminance: light_consts::lux::OVERCAST_DAY,
             shadows_enabled: true,
@@ -72,13 +76,6 @@ fn setup(
             .with_translation(Vec3::new(0.0, 20.0, 0.0)),
         EditorCam::default().with_initial_anchor_depth(20.0),
     ));
-    commands
-        .spawn((
-            Mesh3d(meshes.add(Cuboid::new(1.0, 1.0, 1.0))),
-            MeshMaterial3d(materials.add(Color::srgb_u8(124, 144, 255))),
-            Transform::from_xyz(0.0, 0.5, 0.0),
-        ))
-        .observe(move_on_drag);
 
     let tilemap = asset_server.load("tilemap.ldtk");
 
@@ -93,38 +90,11 @@ fn setup(
     ));
 }
 
-#[derive(Debug, Default, Component, Reflect, Clone)]
-pub struct Protag {}
-
-fn spawn_protag(mut commands: Commands) {
-    commands.spawn((
-        Protag::default(),
-        Transform::default(),
-        Sprite::from_color(LinearRgba::RED, Vec2::ONE * 40.0),
-        Name::new("Protag"),
-    ));
-}
-
-fn update_protag(kb: Res<ButtonInput<KeyCode>>, mut protag: Single<(&mut Transform, &Protag)>) {
-    for (input, dir) in &[
-        (KeyCode::KeyD, Vec3::X),
-        (KeyCode::KeyA, Vec3::NEG_X),
-        (KeyCode::KeyS, Vec3::NEG_Y),
-        (KeyCode::KeyW, Vec3::Y),
-    ] {
-        if kb.pressed(*input) {
-            protag.0.translation += dir * 5.;
-        }
-    }
-}
-
 fn spawn_mesh(
     mut events: EventReader<SpawnMeshEvent>,
     mut commands: Commands,
-    mut asset_server: Res<AssetServer>,
-    maps: Res<Assets<LdtkMap>>,
+    asset_server: Res<AssetServer>,
     images: Res<Assets<Image>>,
-    map_asset: Single<&LdtkMapHandle>,
     tilemaps: Query<(&TileStorage, &TilemapTexture)>,
     tiles: Query<(&TilePos, Option<&TileTextureIndex>, &TileDepth)>,
 ) {
@@ -139,6 +109,7 @@ fn spawn_mesh(
                 Vec<[f32; 2]>,
                 Vec<[f32; 3]>,
                 Option<usize>,
+                Option<&TileDepth>,
             ),
         > = HashMap::new();
 
@@ -158,28 +129,33 @@ fn spawn_mesh(
                 ref mut texture_uvs,
                 ref mut normals,
                 ref mut texture_index,
+                ref mut tiledepth,
             ) = mesh_information.get_mut(&entity).unwrap();
 
+            const FACE_INDICES: &[u32] = &[
+                0, 1, 2, 0, 2, 3, 0, 3, 7, 0, 7, 4, 1, 0, 4, 1, 4, 5, 2, 1, 5, 2, 5, 6, 3, 2, 6, 3,
+                6, 7,
+            ];
             let vertex_data = [
                 ([x_pos, 0.0, y_pos], [0.0, 0.0], [0.0, 1.0, 0.0]),
                 ([x_pos, 0.0, y_pos + 1.0], [0.0, 1.0], [0.0, 1.0, 0.0]),
                 ([x_pos + 1.0, 0.0, y_pos + 1.0], [1.0, 1.0], [0.0, 1.0, 0.0]),
                 ([x_pos + 1.0, 0.0, y_pos], [1.0, 0.0], [0.0, 1.0, 0.0]),
+                ([x_pos, -5.0, y_pos], [0.0, 0.0], [0.0, 1.0, 0.0]),
+                ([x_pos, -5.0, y_pos + 1.0], [0.0, 1.0], [0.0, 1.0, 0.0]),
+                (
+                    [x_pos + 1.0, -5.0, y_pos + 1.0],
+                    [1.0, 1.0],
+                    [0.0, 1.0, 0.0],
+                ),
+                ([x_pos + 1.0, -5.0, y_pos], [1.0, 0.0], [0.0, 1.0, 0.0]),
             ];
             *vertices = vertex_data.into_iter().map(|(v, _, _)| v).collect();
             *texture_uvs = vertex_data.into_iter().map(|(_, uv, _)| uv).collect();
             *normals = vertex_data.into_iter().map(|(_, _, n)| n).collect();
-
+            indices.append(&mut FACE_INDICES.to_vec());
             tile_texture.map(|texture| texture_index.insert(texture.0 as usize));
-
-            const FACE_INDICES: &[u32] = &[0, 1, 2, 0, 2, 3];
-
-            let offseted: &mut Vec<u32> = &mut FACE_INDICES
-                .to_owned()
-                .into_iter()
-                .map(|value: u32| value + (vertices.len() as u32 - 4))
-                .collect();
-            indices.append(offseted);
+            let _ = tiledepth.insert(tile_depth);
         }
 
         let image_handles = tilemap_texture.image_handles();
@@ -235,9 +211,9 @@ fn spawn_mesh(
 
         let mut mesh_bundle_inserts = HashMap::new();
 
-        for (entity, (vertices, indices, texture_uvs, normals, texture_index)) in mesh_information {
-            // log::info!("spawning mesh with {} vertices, {} indices, {} texture uvs, and this texture index {:?}", vertices.len(), indices.len(), texture_uvs.len(), texture_index);
-
+        for (entity, (vertices, indices, texture_uvs, normals, texture_index, tile_depth)) in
+            mesh_information
+        {
             let mesh = Mesh::new(
                 PrimitiveTopology::TriangleList,
                 RenderAssetUsages::default(),
@@ -249,7 +225,6 @@ fn spawn_mesh(
 
             let material = texture_index
                 .map(|texture_index| texture_materials.get(texture_index).unwrap().clone())
-                // .unwrap_or(None)
                 .unwrap_or(missing.clone());
 
             commands
@@ -258,15 +233,20 @@ fn spawn_mesh(
                 .observe(update_material_on::<Pointer<Out>>(material.clone()))
                 .observe(update_material_on::<Pointer<Down>>(selected.clone()))
                 .observe(update_material_on::<Pointer<Up>>(hovering.clone()))
-                .observe(move_on_drag);
+                .observe(move_on_drag)
+                .observe(set_tile_depth_out)
+                .observe(set_tile_depth_up);
 
             mesh_bundle_inserts.insert(
                 entity,
                 (
                     Mesh3d(asset_server.add(mesh)),
                     MeshMaterial3d(material),
-                    Transform::from_xyz(0.0, 0.0, 0.0),
-                    // Name::new(format!("DrawMesh {:?}", texture_index)),
+                    Transform::from_xyz(
+                        0.0,
+                        tile_depth.map(|t| t.0).unwrap_or_default() as f32,
+                        0.0,
+                    ),
                 ),
             );
         }
@@ -295,16 +275,37 @@ fn move_on_drag(
     mut transforms: Query<&mut Transform>,
     kb: Res<ButtonInput<KeyCode>>,
 ) {
-    if (drag.button != PointerButton::Primary) {
+    if drag.button != PointerButton::Primary {
         return;
     }
     let mut transform = transforms.get_mut(drag.entity()).unwrap();
     transform.translation.y -= drag.delta.y * 0.01;
     if kb.pressed(KeyCode::KeyR) {
-        transform.translation.y = (transform.translation.y * 10.0).round() / 10.0
+        transform.translation.y = (transform.translation.y * 10.0).floor() / 10.0
     }
+}
 
-    // transform.rotate_x(drag.delta.y * 0.02);
+fn set_tile_depth_up(
+    drag: Trigger<Pointer<DragEnd>>,
+    transforms: Query<(&mut TileDepth, &mut Transform)>,
+) {
+    if drag.button != PointerButton::Primary {
+        return;
+    }
+    set_tile_depth(drag.entity(), transforms);
+}
+
+fn set_tile_depth_out(
+    drag: Trigger<Pointer<Out>>,
+    transforms: Query<(&mut TileDepth, &mut Transform)>,
+) {
+    set_tile_depth(drag.entity(), transforms);
+}
+
+fn set_tile_depth(entity: Entity, mut transforms: Query<(&mut TileDepth, &mut Transform)>) {
+    let (mut depth, mut transform) = transforms.get_mut(entity).unwrap();
+    transform.translation.y = transform.translation.y.round();
+    depth.0 = transform.translation.y as i64;
 }
 
 // lock the camera in place when space is held
@@ -323,5 +324,62 @@ fn draw_mesh_intersections(pointers: Query<&PointerInteraction>, mut gizmos: Giz
     {
         gizmos.sphere(point, 0.05, RED_500);
         gizmos.arrow(point, point + normal.normalize() * 0.5, PINK_100);
+    }
+}
+
+#[derive(Debug, Clone, Copy, Event, Reflect)]
+pub struct SaveEvent;
+
+fn save_tile_data(
+    _save: Trigger<SaveEvent>,
+    tilemaps: Query<&TileStorage>,
+    tiles: Query<(&TilePos, &TileDepth)>,
+) {
+    let mut tile_info: ldtk::TileDepthMapSerialization = HashMap::new();
+    for tilemap in tilemaps.iter() {
+        tilemap
+            .iter()
+            .filter_map(|item| item.map(|item| tiles.get(item).ok()).unwrap_or_default())
+            .for_each(|(pos, depth)| {
+                tile_info.insert([pos.x, pos.y], depth.0);
+            });
+    }
+
+    let buf = match ron::to_string(&tile_info) {
+        Ok(t) => t,
+        Err(e) => {
+            log::error!("Could not serialize tile depth map [{}]", &e);
+            return;
+        }
+    };
+
+    let mut file = match File::options()
+        .create(true)
+        .write(true)
+        .open("assets/depth_maps/tile_depth_map.ron")
+    {
+        Ok(t) => t,
+        Err(e) => {
+            log::error!("Could not open tile depth map file [{}]", &e);
+            return;
+        }
+    };
+
+    file.set_len(0);
+
+    if file
+        .write_all(buf.as_bytes())
+        .map_err(|err| log::error!("Could not write to tile depth map file [{}]", err))
+        .is_err()
+    {
+        return;
+    };
+    log::info!("Saved tile depth map!")
+}
+
+fn call_save_event(kb: Res<ButtonInput<KeyCode>>, mut saves: EventWriter<SaveEvent>) {
+    if kb.just_pressed(KeyCode::KeyI) {
+        log::info!("Saving tile depth map...");
+        saves.send(SaveEvent);
     }
 }

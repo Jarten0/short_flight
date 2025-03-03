@@ -1,11 +1,11 @@
 use bevy::prelude::Asset;
-use bevy_ecs_tilemap::tiles::TileVisible;
 use bevy_ecs_tilemap::{
     helpers::geometry::get_tilemap_center_transform,
     map::{TilemapId, TilemapSize, TilemapTexture, TilemapTileSize},
     tiles::{TileBundle, TilePos, TileStorage, TileTextureIndex},
     TilemapBundle,
 };
+use std::ops::Deref;
 use std::{collections::HashMap, io::ErrorKind};
 use thiserror::Error;
 
@@ -15,6 +15,8 @@ use bevy::{
     prelude::*,
 };
 use bevy_ecs_tilemap::map::TilemapType;
+
+use crate::deserialize_file;
 
 #[derive(Default)]
 pub struct LdtkPlugin;
@@ -194,6 +196,11 @@ pub fn process_loaded_tile_maps(
 }
 
 fn spawn_map_components(commands: &mut Commands, ldtk_map: &LdtkMap, map_config: &LdtkMapConfig) {
+    let tile_depth_map: TileDepthMapSerialization =
+        deserialize_file("assets/depth_maps/tile_depth_map.ron").unwrap_or_default();
+
+    log::info!("Found tilemap data of {} tiles", tile_depth_map.len());
+
     // Pull out tilesets and their definitions into a new hashmap
     let mut tilesets = HashMap::new();
     ldtk_map.project.defs.tilesets.iter().for_each(|tileset| {
@@ -259,41 +266,42 @@ fn spawn_map_components(commands: &mut Commands, ldtk_map: &LdtkMap, map_config:
                 position
             };
 
+            let tile_depth = tile_depth_map
+                .get(&[position.x, position.y])
+                .map(|item| *item)
+                .unwrap_or_default();
+
             let bundle = (
                 TileBundle {
                     position,
                     tilemap_id: TilemapId(map_entity),
                     texture_index: TileTextureIndex(tile.t as u32),
-                    // Hidden since we use a mesh to draw them anyways
-                    // these tiles are more of state managment really, since theyre useless in 3d
+                    // Hidden since we use a mesh to draw them in 3d
                     // visible: TileVisible(false),
                     ..default()
                 },
-                TileDepth(tile.t),
+                TileDepth(tile_depth),
                 Name::new(format!("Tile {}-{}", uid, index)),
             );
 
             storage.set(&position, commands.spawn(bundle).id());
         }
 
-        let grid_size = tile_size.into();
-        let map_type = TilemapType::default();
-
         // Create the tilemap
         let tilemap = commands
             .entity(map_entity)
             .insert((
                 TilemapBundle {
-                    grid_size,
-                    map_type,
+                    grid_size: tile_size.into(),
+                    map_type: TilemapType::default(),
                     size,
                     storage,
                     texture: TilemapTexture::Single(texture),
                     tile_size,
                     transform: get_tilemap_center_transform(
                         &size,
-                        &grid_size,
-                        &map_type,
+                        &tile_size.into(),
+                        &TilemapType::default(),
                         layer_id as f32,
                     ),
                     // visibility: Visibility::Hidden,
@@ -314,3 +322,5 @@ pub struct TileDepth(pub i64);
 pub struct SpawnMeshEvent {
     pub tilemap: Entity,
 }
+
+pub type TileDepthMapSerialization = HashMap<[u32; 2], i64>;

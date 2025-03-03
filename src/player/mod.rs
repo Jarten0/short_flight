@@ -1,12 +1,15 @@
 use bevy::input::keyboard::KeyboardInput;
 use bevy::prelude::*;
+use bevy_ecs_tilemap::tiles::TileStorage;
 
 pub struct ShayminPlugin;
 
 impl Plugin for ShayminPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(Startup, spawn_shaymin)
-            .add_systems(Update, control_shaymin);
+        app.add_systems(Startup, spawn_shaymin).add_systems(
+            Update,
+            (control_shaymin, process_shaymin_collisions).chain(),
+        );
     }
 }
 
@@ -15,7 +18,7 @@ impl Plugin for ShayminPlugin {
 pub struct Shaymin {}
 
 /// Init func for player code
-pub fn spawn_shaymin(
+fn spawn_shaymin(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
@@ -24,11 +27,11 @@ pub fn spawn_shaymin(
         Shaymin {},
         Mesh3d(meshes.add(Cuboid::from_size(Vec3::ONE / 2.0))),
         MeshMaterial3d(materials.add(Color::srgb(0.3, 0.6, 0.25))),
-        Transform::from_xyz(0.0, 1.5, 0.0),
+        Transform::from_xyz(10.0, 1.5, -2.0),
     ));
 }
 
-pub fn control_shaymin(
+fn control_shaymin(
     mut shaymin: Option<Single<(&mut Transform, &Shaymin), Without<Camera3d>>>,
     mut camera: Option<Single<&mut Transform, With<Camera3d>>>,
     kb: Res<ButtonInput<KeyCode>>,
@@ -56,4 +59,10 @@ pub fn control_shaymin(
         vec3.y += 10.0;
         vec3
     };
+}
+
+fn process_shaymin_collisions(
+    mut shaymin: Option<Single<(&mut Transform, &Shaymin), Without<Camera3d>>>,
+    mut walls: Query<(&TileStorage), Without<Camera3d>>,
+) {
 }
