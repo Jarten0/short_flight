@@ -2,10 +2,10 @@
 
 use std::collections::HashMap;
 use std::fs::File;
-use std::io::Read;
+use std::io::{Read, Write};
 use std::path::PathBuf;
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 pub mod editor;
 pub mod ldtk;
@@ -63,4 +63,30 @@ where
     })?;
 
     Ok(tile_depth_map)
+}
+
+pub fn serialize_to_file(serializable: impl Serialize, path: &str) -> bool {
+    let buf = match ron::to_string(&serializable) {
+        Ok(t) => t,
+        Err(e) => {
+            log::error!("Could not serialize [{}]", &e);
+            return false;
+        }
+    };
+    let mut file = match File::options().create(true).write(true).open(path) {
+        Ok(t) => t,
+        Err(e) => {
+            log::error!("Could not open file [{}]", &e);
+            return false;
+        }
+    };
+    file.set_len(0);
+    if file
+        .write_all(buf.as_bytes())
+        .map_err(|err| log::error!("Could not write to file [{}]", err))
+        .is_err()
+    {
+        return false;
+    };
+    true
 }

@@ -198,8 +198,11 @@ pub fn process_loaded_tile_maps(
 fn spawn_map_components(commands: &mut Commands, ldtk_map: &LdtkMap, map_config: &LdtkMapConfig) {
     let tile_depth_map: TileDepthMapSerialization =
         deserialize_file("assets/depth_maps/tile_depth_map.ron").unwrap_or_default();
+    let tile_slope_map: TileSlopeMapSerialization =
+        deserialize_file("assets/depth_maps/tile_slope_map.ron").unwrap_or_default();
 
-    log::info!("Found tilemap data of {} tiles", tile_depth_map.len());
+    log::info!("Found tilemap depth data of {} tiles", tile_depth_map.len());
+    log::info!("Found tilemap slope data of {} tiles", tile_slope_map.len());
 
     // Pull out tilesets and their definitions into a new hashmap
     let mut tilesets = HashMap::new();
@@ -271,6 +274,11 @@ fn spawn_map_components(commands: &mut Commands, ldtk_map: &LdtkMap, map_config:
                 .map(|item| *item)
                 .unwrap_or_default();
 
+            let tile_slope = tile_slope_map
+                .get(&[position.x, position.y])
+                .map(|item| *item)
+                .unwrap_or_default();
+
             let bundle = (
                 TileBundle {
                     position,
@@ -281,6 +289,7 @@ fn spawn_map_components(commands: &mut Commands, ldtk_map: &LdtkMap, map_config:
                     ..default()
                 },
                 TileDepth(tile_depth),
+                TileSlope(IVec2::from(tile_slope)),
                 Name::new(format!("Tile {}-{}", uid, index)),
             );
 
@@ -318,13 +327,12 @@ fn spawn_map_components(commands: &mut Commands, ldtk_map: &LdtkMap, map_config:
 #[derive(Debug, Reflect, Component, Default, Clone)]
 pub struct TileDepth(pub i64);
 
-// /// Indicates the tile to use as reference for the slope height.
-// /// `TilePos` is the positioning of the tile *relative* to the current tile.
-// ///
-// /// If TilePos is 0,0, then there is no slope here.
-// /// If TilePos is
-// #[derive(Debug, Reflect, Component, Default, Clone)]
-// pub struct TileSlope(pub TilePos);
+/// Indicates the tile to use as reference for the slope height.
+/// `TilePos` is the positioning of the tile *relative* to the current tile.
+///
+/// If TilePos is 0,0, then there is no slope here.
+#[derive(Debug, Reflect, Component, Default, Clone)]
+pub struct TileSlope(pub IVec2);
 
 #[derive(Debug, Event, Reflect, Clone)]
 pub struct SpawnMeshEvent {
@@ -332,3 +340,4 @@ pub struct SpawnMeshEvent {
 }
 
 pub type TileDepthMapSerialization = HashMap<[u32; 2], i64>;
+pub type TileSlopeMapSerialization = HashMap<[u32; 2], IVec2>;

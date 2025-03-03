@@ -6,11 +6,40 @@ use bevy::render::mesh::Indices;
 use bevy::render::mesh::PrimitiveTopology;
 use bevy_ecs_tilemap::prelude::*;
 use image::ImageBuffer;
-use std::collections::HashMap;
+use serde::Serialize;
+use short_flight::ldtk::TileSlope;
+use short_flight::serialize_to_file;
+use std::collections::{HashMap, HashSet};
 use std::fs::File;
 use std::io::Write;
 
-pub fn spawn_mesh(
+pub struct TileMeshManagerPlugin;
+
+impl Plugin for TileMeshManagerPlugin {
+    fn build(&self, app: &mut App) {
+        app.add_systems(
+            Update,
+            (
+                spawn_mesh.after(ldtk::process_loaded_tile_maps),
+                (
+                    call_save_event,
+                    |mut commands: Commands, mut event_reader: EventReader<SaveEvent>| {
+                        for event in event_reader.read() {
+                            commands.trigger(*event);
+                        }
+                    },
+                )
+                    .chain(),
+                // manage_tile_refresh_events,
+            ),
+        )
+        .add_event::<SaveEvent>()
+        // .add_observer(|trigger: Trigger<>|)
+        .add_observer(save_tile_data);
+    }
+}
+
+fn spawn_mesh(
     mut events: EventReader<SpawnMeshEvent>,
     mut commands: Commands,
     asset_server: Res<AssetServer>,
@@ -56,23 +85,14 @@ pub fn spawn_mesh(
                 0, 1, 2, 0, 2, 3, 0, 3, 7, 0, 7, 4, 1, 0, 4, 1, 4, 5, 2, 1, 5, 2, 5, 6, 3, 2, 6, 3,
                 6, 7,
             ];
-            let vertex_data = [
-                ([x_pos, 0.0, y_pos], [0.0, 0.0], [0.0, 1.0, 0.0]),
-                ([x_pos, 0.0, y_pos + 1.0], [0.0, 1.0], [0.0, 1.0, 0.0]),
-                ([x_pos + 1.0, 0.0, y_pos + 1.0], [1.0, 1.0], [0.0, 1.0, 0.0]),
-                ([x_pos + 1.0, 0.0, y_pos], [1.0, 0.0], [0.0, 1.0, 0.0]),
-                ([x_pos, -5.0, y_pos], [0.0, 0.0], [0.0, 1.0, 0.0]),
-                ([x_pos, -5.0, y_pos + 1.0], [0.0, 1.0], [0.0, 1.0, 0.0]),
-                (
-                    [x_pos + 1.0, -5.0, y_pos + 1.0],
-                    [1.0, 1.0],
-                    [0.0, 1.0, 0.0],
-                ),
-                ([x_pos + 1.0, -5.0, y_pos], [1.0, 0.0], [0.0, 1.0, 0.0]),
-            ];
-            *vertices = vertex_data.into_iter().map(|(v, _, _)| v).collect();
-            *texture_uvs = vertex_data.into_iter().map(|(_, uv, _)| uv).collect();
-            *normals = vertex_data.into_iter().map(|(_, _, n)| n).collect();
+            let vertex_data = get_vertex_data(x_pos, y_pos);
+            *vertices = vertex_data.clone().into_iter().map(|(v, _, _)| v).collect();
+            *texture_uvs = vertex_data
+                .clone()
+                .into_iter()
+                .map(|(_, uv, _)| uv)
+                .collect();
+            *normals = vertex_data.clone().into_iter().map(|(_, _, n)| n).collect();
             indices.append(&mut FACE_INDICES.to_vec());
             tile_texture.map(|texture| texture_index.insert(texture.0 as usize));
             let _ = tiledepth.insert(tile_depth);
@@ -154,6 +174,7 @@ pub fn spawn_mesh(
                 .observe(update_material_on::<Pointer<Down>>(selected.clone()))
                 .observe(update_material_on::<Pointer<Up>>(hovering.clone()))
                 .observe(move_on_drag)
+                .observe(set_tile_slope)
                 .observe(set_tile_depth_out)
                 .observe(set_tile_depth_up);
 
@@ -175,8 +196,34 @@ pub fn spawn_mesh(
     }
 }
 
+fn get_vertex_data(
+    x_pos: f32,
+    y_pos: f32,
+    // slope_pos: IVec2,
+    // referenced_slope_height: i64,
+) -> Vec<([f32; 3], [f32; 2], [f32; 3])> {
+    // let slope = Vec2::from(slope_pos);
+    // let z_pos = [
+    //     slope.x / referenced_slope_height as f32
+    // ];
+    vec![
+        ([x_pos, 0.0, y_pos], [0.0, 0.0], [0.0, 1.0, 0.0]),
+        ([x_pos, 0.0, y_pos + 1.0], [0.0, 1.0], [0.0, 1.0, 0.0]),
+        ([x_pos + 1.0, 0.0, y_pos + 1.0], [1.0, 1.0], [0.0, 1.0, 0.0]),
+        ([x_pos + 1.0, 0.0, y_pos], [1.0, 0.0], [0.0, 1.0, 0.0]),
+        ([x_pos, -5.0, y_pos], [0.0, 0.0], [0.0, 1.0, 0.0]),
+        ([x_pos, -5.0, y_pos + 1.0], [0.0, 1.0], [0.0, 1.0, 0.0]),
+        (
+            [x_pos + 1.0, -5.0, y_pos + 1.0],
+            [1.0, 1.0],
+            [0.0, 1.0, 0.0],
+        ),
+        ([x_pos + 1.0, -5.0, y_pos], [1.0, 0.0], [0.0, 1.0, 0.0]),
+    ]
+}
+
 /// Returns an observer that updates the entity's material to the one specified.
-pub fn update_material_on<E>(
+fn update_material_on<E>(
     new_material: Handle<StandardMaterial>,
 ) -> impl Fn(Trigger<E>, Query<&mut MeshMaterial3d<StandardMaterial>>) {
     // An observer closure that captures `new_material`. We do this to avoid needing to write four
@@ -189,16 +236,50 @@ pub fn update_material_on<E>(
     }
 }
 
-/// An observer to rotate an entity when it is dragged
-pub fn move_on_drag(drag: Trigger<Pointer<Drag>>, mut transforms: Query<&mut Transform>) {
+fn move_on_drag(
+    drag: Trigger<Pointer<Drag>>,
+    mut transforms: Query<(&mut Transform)>,
+    // mut tile_change_writer: EventWriter<TileChangeTracker>,
+    kb: Res<ButtonInput<KeyCode>>,
+) {
     if drag.button != PointerButton::Primary {
         return;
     }
-    let mut transform = transforms.get_mut(drag.entity()).unwrap();
+    if kb.pressed(KeyCode::ShiftLeft) {
+        return;
+    }
+    let (mut transform) = transforms.get_mut(drag.entity()).unwrap();
     transform.translation.y -= drag.delta.y * 0.01;
+    // tile_change_writer.send(tile_change.clone());
 }
 
-pub fn set_tile_depth_up(
+fn set_tile_slope(
+    drag: Trigger<Pointer<Down>>,
+    mut slopes: Query<&mut TileSlope>,
+    kb: Res<ButtonInput<KeyCode>>,
+) {
+    if drag.button != PointerButton::Primary {
+        return;
+    }
+    if !kb.pressed(KeyCode::ShiftLeft) {
+        return;
+    }
+    let mut slope = slopes.get_mut(drag.entity()).unwrap();
+    if kb.just_pressed(KeyCode::KeyA) {
+        slope.0.x -= 1;
+    }
+    if kb.just_pressed(KeyCode::KeyD) {
+        slope.0.x += 1;
+    }
+    if kb.just_pressed(KeyCode::KeyW) {
+        slope.0.y += 1;
+    }
+    if kb.just_pressed(KeyCode::KeyS) {
+        slope.0.y -= 1;
+    }
+}
+
+fn set_tile_depth_up(
     drag: Trigger<Pointer<DragEnd>>,
     transforms: Query<(&mut TileDepth, &mut Transform)>,
 ) {
@@ -208,72 +289,80 @@ pub fn set_tile_depth_up(
     set_tile_depth(drag.entity(), transforms);
 }
 
-pub fn set_tile_depth_out(
+fn set_tile_depth_out(
     drag: Trigger<Pointer<Out>>,
     transforms: Query<(&mut TileDepth, &mut Transform)>,
 ) {
     set_tile_depth(drag.entity(), transforms);
 }
 
-pub fn set_tile_depth(entity: Entity, mut transforms: Query<(&mut TileDepth, &mut Transform)>) {
+fn set_tile_depth(entity: Entity, mut transforms: Query<(&mut TileDepth, &mut Transform)>) {
     let (mut depth, mut transform) = transforms.get_mut(entity).unwrap();
-    transform.translation.y = transform.translation.y.round();
+    transform.translation.y = transform.translation.y.floor();
     depth.0 = transform.translation.y as i64;
 }
 
 #[derive(Debug, Clone, Copy, Event, Reflect)]
-pub struct SaveEvent;
+struct SaveEvent;
 
-pub fn save_tile_data(
+fn save_tile_data(
     _save: Trigger<SaveEvent>,
     tilemaps: Query<&TileStorage>,
-    tiles: Query<(&TilePos, &TileDepth)>,
+    tiles: Query<(&TilePos, &TileDepth, &TileSlope)>,
 ) {
-    let mut tile_info: ldtk::TileDepthMapSerialization = HashMap::new();
+    let mut depth_info: ldtk::TileDepthMapSerialization = HashMap::new();
+    let mut slope_info: ldtk::TileSlopeMapSerialization = HashMap::new();
     for tilemap in tilemaps.iter() {
         tilemap
             .iter()
             .filter_map(|item| item.map(|item| tiles.get(item).ok()).unwrap_or_default())
-            .for_each(|(pos, depth)| {
-                tile_info.insert([pos.x, pos.y], depth.0);
+            .for_each(|(pos, depth, slope)| {
+                depth_info.insert([pos.x, pos.y], depth.0);
+                slope_info.insert([pos.x, pos.y], slope.0);
             });
     }
 
-    let buf = match ron::to_string(&tile_info) {
-        Ok(t) => t,
-        Err(e) => {
-            log::error!("Could not serialize tile depth map [{}]", &e);
-            return;
-        }
-    };
-
-    let mut file = match File::options()
-        .create(true)
-        .write(true)
-        .open("assets/depth_maps/tile_depth_map.ron")
-    {
-        Ok(t) => t,
-        Err(e) => {
-            log::error!("Could not open tile depth map file [{}]", &e);
-            return;
-        }
-    };
-
-    file.set_len(0);
-
-    if file
-        .write_all(buf.as_bytes())
-        .map_err(|err| log::error!("Could not write to tile depth map file [{}]", err))
-        .is_err()
-    {
-        return;
-    };
-    log::info!("Saved tile depth map!")
+    let path = "assets/depth_maps/tile_depth_map.ron";
+    if serialize_to_file(depth_info, path) {
+        log::info!("Saved tile depth map!")
+    }
+    let path = "assets/depth_maps/tile_slope_map.ron";
+    if serialize_to_file(slope_info, path) {
+        log::info!("Saved tile slope map!")
+    }
 }
 
-pub fn call_save_event(kb: Res<ButtonInput<KeyCode>>, mut saves: EventWriter<SaveEvent>) {
+fn call_save_event(kb: Res<ButtonInput<KeyCode>>, mut saves: EventWriter<SaveEvent>) {
     if kb.just_pressed(KeyCode::KeyI) {
         log::info!("Saving tile depth map...");
         saves.send(SaveEvent);
     }
 }
+
+// fn manage_tile_refresh_events(
+//     mut tile_changes: EventReader<TileChangeTracker>,
+//     mut commands: Commands,
+// ) {
+//     let mut entities_to_refresh: HashMap<&Entity, Vec<TileChanged>> = HashMap::new();
+//     for event in tile_changes.read() {
+//         for entity in event.0.iter() {
+//             if let Some(events) = entities_to_refresh.get_mut(entity) {
+//                 events.push(event);
+//             } else {
+//                 entities_to_refresh.insert(entity, vec![event]);
+//             }
+//         }
+//     }
+//     for (entity, events) in entities_to_refresh {
+//         commands.trigger();
+//     }
+//     tile_changes.clear();
+// }
+
+// /// When this tile is changed, let all of these entities know
+// #[derive(Debug, Clone, Event)]
+// struct TileChangeTracker(Vec<Entity>);
+// #[derive(Debug, Clone, Copy, Event)]
+// struct TileChanged { slope: bool }
+
+// fn update_tile_slope(mut tile: Query<&TileSlope, &mut Mesh3d>) {}

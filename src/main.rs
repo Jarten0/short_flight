@@ -1,4 +1,5 @@
 #![feature(int_roundings)]
+#![feature(generic_arg_infer)]
 
 use bevy::color::palettes::tailwind::{PINK_100, RED_500};
 use bevy::prelude::*;
@@ -17,32 +18,15 @@ fn main() {
     App::new()
         .add_plugins(DefaultPlugins)
         .add_plugins(player::ShayminPlugin)
+        .add_plugins(mesh::TileMeshManagerPlugin)
         .add_plugins(WorldInspectorPlugin::default())
         .add_plugins(TilemapPlugin)
         .add_plugins(LdtkPlugin)
         .add_plugins(MeshPickingPlugin)
         .add_plugins(DefaultEditorCamPlugins)
         .add_systems(PreStartup, setup)
-        .add_systems(
-            Update,
-            (
-                mesh::spawn_mesh.after(ldtk::process_loaded_tile_maps),
-                (
-                    mesh::call_save_event,
-                    |mut commands: Commands, mut event_reader: EventReader<mesh::SaveEvent>| {
-                        for event in event_reader.read() {
-                            commands.trigger(*event);
-                        }
-                    },
-                )
-                    .chain(),
-                draw_mesh_intersections,
-                pause_on_space,
-            ),
-        )
+        .add_systems(Update, (draw_mesh_intersections, pause_on_space))
         .add_event::<SpawnMeshEvent>()
-        .add_event::<mesh::SaveEvent>()
-        .add_observer(mesh::save_tile_data)
         .run();
 }
 
