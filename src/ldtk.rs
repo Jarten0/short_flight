@@ -318,6 +318,14 @@ fn spawn_map_components(commands: &mut Commands, ldtk_map: &LdtkMap, map_config:
 #[derive(Debug, Reflect, Component, Default, Clone)]
 pub struct TileDepth(pub i64);
 
+// /// Indicates the tile to use as reference for the slope height.
+// /// `TilePos` is the positioning of the tile *relative* to the current tile.
+// ///
+// /// If TilePos is 0,0, then there is no slope here.
+// /// If TilePos is
+// #[derive(Debug, Reflect, Component, Default, Clone)]
+// pub struct TileSlope(pub TilePos);
+
 #[derive(Debug, Event, Reflect, Clone)]
 pub struct SpawnMeshEvent {
     pub tilemap: Entity,
