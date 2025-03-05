@@ -39,7 +39,7 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
         },
         Transform {
             translation: Vec3::new(0.0, 2.0, 0.0),
-            rotation: Quat::from_rotation_x(PI / -2.0),
+            rotation: Quat::from_rotation_x(PI / -1.8),
             ..default()
         },
         ShowLightGizmo::default(),

@@ -289,7 +289,7 @@ fn spawn_map_components(commands: &mut Commands, ldtk_map: &LdtkMap, map_config:
                     ..default()
                 },
                 TileDepth(tile_depth),
-                TileSlope(IVec2::from(tile_slope)),
+                TileSlope(Vec2::from(tile_slope)),
                 Name::new(format!("Tile {}-{}", uid, index)),
             );
 
@@ -332,7 +332,7 @@ pub struct TileDepth(pub i64);
 ///
 /// If TilePos is 0,0, then there is no slope here.
 #[derive(Debug, Reflect, Component, Default, Clone)]
-pub struct TileSlope(pub IVec2);
+pub struct TileSlope(pub Vec2);
 
 #[derive(Debug, Event, Reflect, Clone)]
 pub struct SpawnMeshEvent {
@@ -340,4 +340,4 @@ pub struct SpawnMeshEvent {
 }
 
 pub type TileDepthMapSerialization = HashMap<[u32; 2], i64>;
-pub type TileSlopeMapSerialization = HashMap<[u32; 2], IVec2>;
+pub type TileSlopeMapSerialization = HashMap<[u32; 2], Vec2>;

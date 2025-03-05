@@ -45,7 +45,7 @@ fn spawn_mesh(
     asset_server: Res<AssetServer>,
     images: Res<Assets<Image>>,
     tilemaps: Query<(&TileStorage, &TilemapTexture)>,
-    tiles: Query<(&TilePos, Option<&TileTextureIndex>, &TileDepth)>,
+    tiles: Query<(&TilePos, Option<&TileTextureIndex>, &TileDepth, &TileSlope)>,
 ) {
     for event in events.read() {
         log::info!("Spawning new mesh");
@@ -58,14 +58,14 @@ fn spawn_mesh(
                 Vec<[f32; 2]>,
                 Vec<[f32; 3]>,
                 Option<usize>,
-                Option<&TileDepth>,
             ),
         > = HashMap::new();
 
         let (tilemap_storage, tilemap_texture) = tilemaps.get(event.tilemap).unwrap();
 
         for entity in tilemap_storage.iter().filter_map(|item| *item) {
-            let (tile_pos, tile_texture, tile_depth) = tiles.get(entity).unwrap();
+            let (tile_pos, tile_texture, TileDepth(tile_depth), TileSlope(tile_slope)) =
+                tiles.get(entity).unwrap();
             let x_pos = tile_pos.x as f32;
             let y_pos = -(tile_pos.y as f32);
 
@@ -78,14 +78,21 @@ fn spawn_mesh(
                 ref mut texture_uvs,
                 ref mut normals,
                 ref mut texture_index,
-                ref mut tiledepth,
             ) = mesh_information.get_mut(&entity).unwrap();
 
-            const FACE_INDICES: &[u32] = &[
-                0, 1, 2, 0, 2, 3, 0, 3, 7, 0, 7, 4, 1, 0, 4, 1, 4, 5, 2, 1, 5, 2, 5, 6, 3, 2, 6, 3,
-                6, 7,
-            ];
-            let vertex_data = get_vertex_data(x_pos, y_pos);
+            // const FACE_INDICES: &[u32] = &[
+            //     0, 1, 2, 0, 2, 3, 0, 3, 7, 0, 7, 4, 1, 0, 4, 1, 4, 5, 2, 1, 5, 2, 5, 6, 3, 2, 6, 3,
+            //     6, 7,
+            // ];
+            // let vertex_data = get_vertex_data(x_pos, y_pos);
+            let (vertex_data, mut index_data) = calculate_mesh_data(
+                x_pos,
+                y_pos,
+                *tile_depth as f32,
+                Vec3::from((*tile_slope, 0.)),
+                0.0,
+                [2; 4],
+            );
             *vertices = vertex_data.clone().into_iter().map(|(v, _, _)| v).collect();
             *texture_uvs = vertex_data
                 .clone()
@@ -93,9 +100,8 @@ fn spawn_mesh(
                 .map(|(_, uv, _)| uv)
                 .collect();
             *normals = vertex_data.clone().into_iter().map(|(_, _, n)| n).collect();
-            indices.append(&mut FACE_INDICES.to_vec());
+            indices.append(&mut index_data);
             tile_texture.map(|texture| texture_index.insert(texture.0 as usize));
-            let _ = tiledepth.insert(tile_depth);
         }
 
         let image_handles = tilemap_texture.image_handles();
@@ -151,9 +157,7 @@ fn spawn_mesh(
 
         let mut mesh_bundle_inserts = HashMap::new();
 
-        for (entity, (vertices, indices, texture_uvs, normals, texture_index, tile_depth)) in
-            mesh_information
-        {
+        for (entity, (vertices, indices, texture_uvs, normals, texture_index)) in mesh_information {
             let mesh = Mesh::new(
                 PrimitiveTopology::TriangleList,
                 RenderAssetUsages::default(),
@@ -184,9 +188,8 @@ fn spawn_mesh(
                     Mesh3d(asset_server.add(mesh)),
                     MeshMaterial3d(material),
                     Transform::from_xyz(
-                        0.0,
-                        tile_depth.map(|t| t.0).unwrap_or_default() as f32,
-                        0.0,
+                        0.0, // tile_depth.map(|t| t.0).unwrap_or_default() as f32,
+                        0.0, 0.0,
                     ),
                 ),
             );
@@ -194,32 +197,6 @@ fn spawn_mesh(
 
         commands.insert_batch(mesh_bundle_inserts);
     }
-}
-
-fn get_vertex_data(
-    x_pos: f32,
-    y_pos: f32,
-    // slope_pos: IVec2,
-    // referenced_slope_height: i64,
-) -> Vec<([f32; 3], [f32; 2], [f32; 3])> {
-    // let slope = Vec2::from(slope_pos);
-    // let z_pos = [
-    //     slope.x / referenced_slope_height as f32
-    // ];
-    vec![
-        ([x_pos, 0.0, y_pos], [0.0, 0.0], [0.0, 1.0, 0.0]),
-        ([x_pos, 0.0, y_pos + 1.0], [0.0, 1.0], [0.0, 1.0, 0.0]),
-        ([x_pos + 1.0, 0.0, y_pos + 1.0], [1.0, 1.0], [0.0, 1.0, 0.0]),
-        ([x_pos + 1.0, 0.0, y_pos], [1.0, 0.0], [0.0, 1.0, 0.0]),
-        ([x_pos, -5.0, y_pos], [0.0, 0.0], [0.0, 1.0, 0.0]),
-        ([x_pos, -5.0, y_pos + 1.0], [0.0, 1.0], [0.0, 1.0, 0.0]),
-        (
-            [x_pos + 1.0, -5.0, y_pos + 1.0],
-            [1.0, 1.0],
-            [0.0, 1.0, 0.0],
-        ),
-        ([x_pos + 1.0, -5.0, y_pos], [1.0, 0.0], [0.0, 1.0, 0.0]),
-    ]
 }
 
 /// Returns an observer that updates the entity's material to the one specified.
@@ -266,16 +243,16 @@ fn set_tile_slope(
     }
     let mut slope = slopes.get_mut(drag.entity()).unwrap();
     if kb.just_pressed(KeyCode::KeyA) {
-        slope.0.x -= 1;
+        slope.0.x -= 1.0;
     }
     if kb.just_pressed(KeyCode::KeyD) {
-        slope.0.x += 1;
+        slope.0.x += 1.0;
     }
     if kb.just_pressed(KeyCode::KeyW) {
-        slope.0.y += 1;
+        slope.0.y += 1.0;
     }
     if kb.just_pressed(KeyCode::KeyS) {
-        slope.0.y -= 1;
+        slope.0.y -= 1.0;
     }
 }
 
@@ -378,7 +355,7 @@ fn calculate_mesh_data(
 
     let mut index_offset = 0;
     let mut offset_indices = |indices: Vec<u32>| {
-        let maximum = indices.iter().max().map(|i| *i).unwrap_or_default();
+        let maximum = indices.iter().max().map(|i| *i + 1).unwrap_or_default();
         let new: Vec<u32> = indices
             .into_iter()
             .map(|value| value + index_offset)
@@ -393,10 +370,10 @@ fn calculate_mesh_data(
 
     let corners = get_slope_corner_depths(slope.xy(), slope_i);
 
-    insert(top_vertices(x_pos, y_pos, corners));
+    let top_vertices = top_vertices(x_pos, y_pos, corners);
 
     for (side_index, side) in [[0, 1], [1, 2], [2, 3], [3, 0]].into_iter().enumerate() {
-        let [v1, v2] = [vertices[side[0]].0, vertices[side[1]].0];
+        let [v1, v2] = [top_vertices.0[side[0]].0, top_vertices.0[side[1]].0];
         insert(slope_wall_data(depth, v1, v2));
 
         for wall in 0..wall_counts[side_index] {
@@ -413,6 +390,7 @@ fn calculate_mesh_data(
             ));
         }
     }
+    insert(top_vertices);
 
     (vertices, indices)
 }
@@ -462,13 +440,15 @@ fn top_vertices(
     y_pos: f32,
     corners: [f32; 4],
 ) -> (Vec<([f32; 3], [f32; 2], [f32; 3])>, Vec<u32>) {
-    let mut vertices = vec![
-        ([x_pos, corners[0], y_pos], [0., 0.], [0., 1., 0.]),
-        ([x_pos + 1., corners[1], y_pos], [1., 0.], [0., 1., 0.]),
-        ([x_pos + 1., corners[2], y_pos + 1.], [1., 1.], [0., 1., 0.]),
-        ([x_pos, corners[3], y_pos + 1.], [0., 1.], [0., 1., 0.]),
-    ];
-    (vertices, vec![0_u32, 1, 2, 0, 2, 3])
+    (
+        vec![
+            ([x_pos, corners[0], y_pos], [0., 0.], [0., 1., 0.]),
+            ([x_pos + 1., corners[1], y_pos], [1., 0.], [0., 1., 0.]),
+            ([x_pos + 1., corners[2], y_pos + 1.], [1., 1.], [0., 1., 0.]),
+            ([x_pos, corners[3], y_pos + 1.], [0., 1.], [0., 1., 0.]),
+        ],
+        vec![2, 1, 0, 3, 2, 0],
+    )
 }
 
 /// generates the vertex data for a wall, given:
