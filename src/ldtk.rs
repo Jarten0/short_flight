@@ -112,28 +112,6 @@ impl AssetLoader for LdtkLoader {
     }
 }
 
-pub fn initialize_immediate_tilemaps(
-    mut commands: Commands,
-    query: Query<(&LdtkMapHandle, &LdtkMapConfig)>,
-    maps: Res<Assets<LdtkMap>>,
-) {
-    log::info!("Initializing immediate tilemaps");
-    let query_iter = query.iter().map(|query| {
-        (
-            maps.get(&query.0 .0).expect(&format!(
-                "Expected map asset, found nothing for {} in {:?}",
-                query.0 .0.id(),
-                maps.ids().collect::<Vec<AssetId<LdtkMap>>>()
-            )),
-            query,
-        )
-    });
-
-    for (map, (_, config)) in query_iter {
-        spawn_map_components(&mut commands, map, config);
-    }
-}
-
 pub fn process_loaded_tile_maps(
     mut commands: Commands,
     mut map_events: EventReader<AssetEvent<LdtkMap>>,
@@ -296,7 +274,6 @@ fn spawn_map_components(commands: &mut Commands, ldtk_map: &LdtkMap, map_config:
             storage.set(&position, commands.spawn(bundle).id());
         }
 
-        // Create the tilemap
         let tilemap = commands
             .entity(map_entity)
             .insert((
@@ -313,7 +290,7 @@ fn spawn_map_components(commands: &mut Commands, ldtk_map: &LdtkMap, map_config:
                         &TilemapType::default(),
                         layer_id as f32,
                     ),
-                    // visibility: Visibility::Hidden,
+                    // visibility: Visibility::Visible,
                     ..default()
                 },
                 Name::new(format!("Tilemap #{}", uid)),

@@ -50,61 +50,19 @@ fn spawn_mesh(
     for event in events.read() {
         log::info!("Spawning new mesh");
 
-        let mut mesh_information: HashMap<
-            Entity,
-            (
-                Vec<[f32; 3]>,
-                Vec<u32>,
-                Vec<[f32; 2]>,
-                Vec<[f32; 3]>,
-                Option<usize>,
-            ),
-        > = HashMap::new();
-
         let (tilemap_storage, tilemap_texture) = tilemaps.get(event.tilemap).unwrap();
 
+        let image_handles = tilemap_texture.image_handles();
+
+        let mut mesh_information = HashMap::new();
         for entity in tilemap_storage.iter().filter_map(|item| *item) {
-            let (tile_pos, tile_texture, TileDepth(tile_depth), TileSlope(tile_slope)) =
-                tiles.get(entity).unwrap();
-            let x_pos = tile_pos.x as f32;
-            let y_pos = -(tile_pos.y as f32);
-
-            mesh_information.insert(entity, Default::default());
-
-            // pull a reference instead of declaring so that changing type declaration is easier
-            let (
-                ref mut vertices,
-                ref mut indices,
-                ref mut texture_uvs,
-                ref mut normals,
-                ref mut texture_index,
-            ) = mesh_information.get_mut(&entity).unwrap();
-
-            // const FACE_INDICES: &[u32] = &[
-            //     0, 1, 2, 0, 2, 3, 0, 3, 7, 0, 7, 4, 1, 0, 4, 1, 4, 5, 2, 1, 5, 2, 5, 6, 3, 2, 6, 3,
-            //     6, 7,
-            // ];
-            // let vertex_data = get_vertex_data(x_pos, y_pos);
-            let (vertex_data, mut index_data) = calculate_mesh_data(
-                x_pos,
-                y_pos,
-                *tile_depth as f32,
-                Vec3::from((*tile_slope, 0.)),
-                0.0,
-                [2; 4],
-            );
-            *vertices = vertex_data.clone().into_iter().map(|(v, _, _)| v).collect();
-            *texture_uvs = vertex_data
-                .clone()
-                .into_iter()
-                .map(|(_, uv, _)| uv)
-                .collect();
-            *normals = vertex_data.clone().into_iter().map(|(_, _, n)| n).collect();
-            indices.append(&mut index_data);
-            tile_texture.map(|texture| texture_index.insert(texture.0 as usize));
+            let Some(mesh_info) = create_mesh_from_tile_data(entity, &tiles) else {
+                log::error!("Could not query tile info for {}'s mesh data!", entity);
+                continue;
+            };
+            mesh_information.insert(entity, mesh_info);
         }
 
-        let image_handles = tilemap_texture.image_handles();
         let Some(texture) = image_handles.get(0) else {
             log::error!("Could not find the tilemap texture!");
             continue;
@@ -197,6 +155,58 @@ fn spawn_mesh(
 
         commands.insert_batch(mesh_bundle_inserts);
     }
+}
+
+fn create_mesh_from_tile_data(
+    tile: Entity,
+    tile_data_query: &Query<(&TilePos, Option<&TileTextureIndex>, &TileDepth, &TileSlope)>,
+) -> Option<(
+    Vec<[f32; 3]>,
+    Vec<u32>,
+    Vec<[f32; 2]>,
+    Vec<[f32; 3]>,
+    Option<usize>,
+)> {
+    let mut mesh: (
+        Vec<[f32; 3]>,
+        Vec<u32>,
+        Vec<[f32; 2]>,
+        Vec<[f32; 3]>,
+        Option<usize>,
+    ) = Default::default();
+    let (
+        ref mut vertices,
+        ref mut indices,
+        ref mut texture_uvs,
+        ref mut normals,
+        ref mut texture_index,
+    ) = mesh;
+
+    let (tile_pos, tile_texture, TileDepth(tile_depth), TileSlope(tile_slope)) =
+        tile_data_query.get(tile).ok()?;
+
+    let x_pos = tile_pos.x as f32;
+    let y_pos = -(tile_pos.y as f32);
+
+    let (vertex_data, index_data) = calculate_mesh_data(
+        x_pos,
+        y_pos,
+        *tile_depth as f32,
+        Vec3::from((*tile_slope, 0.)),
+        0.0,
+        [2; 4],
+    );
+    *vertices = vertex_data.clone().into_iter().map(|(v, _, _)| v).collect();
+    *texture_uvs = vertex_data
+        .clone()
+        .into_iter()
+        .map(|(_, uv, _)| uv)
+        .collect();
+    *normals = vertex_data.clone().into_iter().map(|(_, _, n)| n).collect();
+    *indices = index_data;
+    tile_texture.map(|texture| texture_index.insert(texture.0 as usize));
+
+    return Some(mesh);
 }
 
 /// Returns an observer that updates the entity's material to the one specified.
