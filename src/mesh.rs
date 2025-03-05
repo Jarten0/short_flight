@@ -365,4 +365,160 @@ fn call_save_event(kb: Res<ButtonInput<KeyCode>>, mut saves: EventWriter<SaveEve
 // #[derive(Debug, Clone, Copy, Event)]
 // struct TileChanged { slope: bool }
 
-// fn update_tile_slope(mut tile: Query<&TileSlope, &mut Mesh3d>) {}
+fn calculate_mesh_data(
+    x_pos: f32,
+    y_pos: f32,
+    depth: f32,
+    slope: Vec3,
+    slope_i: f32,
+    wall_counts: [u32; 4],
+) -> (Vec<([f32; 3], [f32; 2], [f32; 3])>, Vec<u32>) {
+    let mut vertices = vec![];
+    let mut indices = vec![];
+
+    let mut index_offset = 0;
+    let mut offset_indices = |indices: Vec<u32>| {
+        let maximum = indices.iter().max().map(|i| *i).unwrap_or_default();
+        let new: Vec<u32> = indices
+            .into_iter()
+            .map(|value| value + index_offset)
+            .collect();
+        index_offset += maximum;
+        new
+    };
+    let mut insert = |data: (Vec<([f32; 3], [f32; 2], [f32; 3])>, Vec<u32>)| {
+        vertices.append(&mut { data.0 });
+        indices.append(&mut offset_indices(data.1));
+    };
+
+    let corners = get_slope_corner_depths(slope.xy(), slope_i);
+
+    insert(top_vertices(x_pos, y_pos, corners));
+
+    for (side_index, side) in [[0, 1], [1, 2], [2, 3], [3, 0]].into_iter().enumerate() {
+        let [v1, v2] = [vertices[side[0]].0, vertices[side[1]].0];
+        insert(slope_wall_data(depth, v1, v2));
+
+        for wall in 0..wall_counts[side_index] {
+            let (new_vertices, new_indices) = wall_vertices(v1, v2, side_index);
+            insert((
+                new_vertices
+                    .into_iter()
+                    .map(|mut v| {
+                        v.0[1] -= wall as f32;
+                        v
+                    })
+                    .collect::<Vec<([f32; 3], [f32; 2], [f32; 3])>>(),
+                new_indices,
+            ));
+        }
+    }
+
+    (vertices, indices)
+}
+
+fn slope_wall_data(
+    depth: f32,
+    v1: [f32; 3],
+    v2: [f32; 3],
+) -> (Vec<([f32; 3], [f32; 2], [f32; 3])>, Vec<u32>) {
+    let mut vertices: Vec<([f32; 3], [f32; 2], [f32; 3])> = vec![];
+    let mut indices: Vec<u32> = vec![];
+
+    let v1_is_slope = v1[1] > depth;
+    let v2_is_slope = v2[1] > depth;
+    if v1_is_slope {
+        vertices.push({
+            let mut v = v1.clone();
+            v[1] = depth;
+            (v, [1., 1.], [1., 1., 1.])
+        });
+    }
+    if v2_is_slope {
+        vertices.push({
+            let mut v = v2.clone();
+            v[1] = depth;
+            (v, [0., 1.], [1., 1., 1.])
+        });
+    }
+    if v1_is_slope | v2_is_slope {
+        let max = f32::max(v1[1], v2[1]);
+        vertices.push((v2.clone(), [0., (v1[1] - depth) / max], [1., 1., 1.]));
+        vertices.push((v2.clone(), [1., (v2[1] - depth) / max], [1., 1., 1.]));
+        if v1_is_slope & v2_is_slope {
+            indices.append(&mut (vec![0, 1, 2, 0, 2, 3]));
+        } else {
+            indices.append(&mut (vec![0, 1, 2]));
+        }
+    }
+    (vertices, indices)
+}
+
+/// generates the vertex data for the top of the mesh, given:
+/// - the x and y position of the tile
+/// - the height of each corner of the top face
+fn top_vertices(
+    x_pos: f32,
+    y_pos: f32,
+    corners: [f32; 4],
+) -> (Vec<([f32; 3], [f32; 2], [f32; 3])>, Vec<u32>) {
+    let mut vertices = vec![
+        ([x_pos, corners[0], y_pos], [0., 0.], [0., 1., 0.]),
+        ([x_pos + 1., corners[1], y_pos], [1., 0.], [0., 1., 0.]),
+        ([x_pos + 1., corners[2], y_pos + 1.], [1., 1.], [0., 1., 0.]),
+        ([x_pos, corners[3], y_pos + 1.], [0., 1.], [0., 1., 0.]),
+    ];
+    (vertices, vec![0_u32, 1, 2, 0, 2, 3])
+}
+
+/// generates the vertex data for a wall, given:
+/// - two vertices that form the *top* line for the wall
+/// - a direction value to get the normals with
+fn wall_vertices(
+    wall_vertex_1: [f32; 3],
+    wall_vertex_2: [f32; 3],
+    side_index: usize,
+) -> (Vec<([f32; 3], [f32; 2], [f32; 3])>, Vec<u32>) {
+    let normal = match side_index {
+        0 => [-1., 0., 0.],
+        1 => [0., 0., 1.],
+        2 => [1., 0., 0.],
+        3 => [0., 0., -1.],
+        _ => panic!(),
+    };
+    let vertices = vec![
+        (wall_vertex_1.clone(), [0., 0.], normal.clone()),
+        (wall_vertex_2.clone(), [1., 0.], normal.clone()),
+        {
+            let mut v = wall_vertex_2.clone();
+            v[1] -= 1.0;
+            (v, [1., 1.], normal.clone())
+        },
+        {
+            let mut v = wall_vertex_1.clone();
+            v[1] -= 1.0;
+            (v, [0., 1.], normal.clone())
+        },
+    ];
+    let indices = vec![0, 1, 2, 0, 2, 3];
+    (vertices, indices)
+}
+
+/// For the given slope (`s`) value, returns the depth of the four corners of a tile
+/// that should become a slope.
+///
+/// The `i` parameter determines how "inclusive" a slope should be,
+/// notably determining whether corner slopes become extrusive or intrusive.
+///
+/// This was written with `i` in mind being only within a range of 0.0-1.0,
+/// and usually at only either end of the range,
+/// but does not assert as much incase a unique `i` value proves to be useful.
+fn get_slope_corner_depths(s: Vec2, i: f32) -> [f32; 4] {
+    let c = |value: f32| f32::clamp(value, 0., f32::INFINITY);
+    let cn = |value: f32| f32::clamp(value, f32::NEG_INFINITY, 0.);
+    let tr = c(s.x) + cn(s.x) * i + c(s.y) + cn(s.y) * i;
+    let bl = cn(s.x) + c(s.x) * i + cn(s.y) + c(s.y) * i;
+    let br = c(s.x) + cn(s.x) * i + cn(s.y) + c(s.y) * i;
+    let tl = cn(s.x) + c(s.x) * i + c(s.y) + cn(s.y) * i;
+    [tl, tr, br, bl]
+}
