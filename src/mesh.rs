@@ -103,7 +103,7 @@ fn spawn_mesh(
         log::info!("Spliced {} images from {:?}", textures.len(), texture);
 
         let texture_materials: Vec<Handle<StandardMaterial>> = textures
-            .into_iter()
+            .iter()
             .map(|image_handle| asset_server.add(StandardMaterial::from(image_handle.clone())))
             .collect();
         let hovering: Handle<StandardMaterial> =
@@ -113,84 +113,129 @@ fn spawn_mesh(
         let missing: Handle<StandardMaterial> =
             asset_server.add(StandardMaterial::from_color(palettes::basic::PURPLE));
 
+        let tilemap_mesh_data = TilemapMeshData {
+            texture: (*texture).clone(),
+            textures,
+            tile_size: [tile_width, tile_height],
+            texture_materials,
+            hovering,
+            selected,
+            missing,
+        };
+
+        let tilemap_mesh_data: &TilemapMeshData = &tilemap_mesh_data;
+
         let mut mesh_bundle_inserts = HashMap::new();
 
-        for (entity, (vertices, indices, texture_uvs, normals, texture_index)) in mesh_information {
-            let mesh = Mesh::new(
-                PrimitiveTopology::TriangleList,
-                RenderAssetUsages::default(),
-            )
-            .with_inserted_attribute(Mesh::ATTRIBUTE_POSITION, vertices)
-            .with_inserted_attribute(Mesh::ATTRIBUTE_UV_0, texture_uvs)
-            .with_inserted_attribute(Mesh::ATTRIBUTE_NORMAL, normals)
-            .with_inserted_indices(Indices::U32(indices));
-
-            let material = texture_index
-                .map(|texture_index| texture_materials.get(texture_index).unwrap().clone())
-                .unwrap_or(missing.clone());
+        for (entity, mesh_info) in mesh_information {
+            let bundle = get_mesh_components_from_info(&asset_server, tilemap_mesh_data, mesh_info);
 
             commands
                 .entity(entity)
-                .observe(update_material_on::<Pointer<Over>>(hovering.clone()))
-                .observe(update_material_on::<Pointer<Out>>(material.clone()))
-                .observe(update_material_on::<Pointer<Down>>(selected.clone()))
-                .observe(update_material_on::<Pointer<Up>>(hovering.clone()))
+                .observe(update_material_on::<Pointer<Over>>(
+                    tilemap_mesh_data.hovering.clone(),
+                ))
+                .observe(update_material_on::<Pointer<Out>>(bundle.1 .0.clone()))
+                .observe(update_material_on::<Pointer<Down>>(
+                    tilemap_mesh_data.selected.clone(),
+                ))
+                .observe(update_material_on::<Pointer<Up>>(
+                    tilemap_mesh_data.hovering.clone(),
+                ))
                 .observe(move_on_drag)
                 .observe(set_tile_slope)
                 .observe(set_tile_depth_out)
                 .observe(set_tile_depth_up);
 
-            mesh_bundle_inserts.insert(
-                entity,
-                (
-                    Mesh3d(asset_server.add(mesh)),
-                    MeshMaterial3d(material),
-                    Transform::from_xyz(
-                        0.0, // tile_depth.map(|t| t.0).unwrap_or_default() as f32,
-                        0.0, 0.0,
-                    ),
-                ),
-            );
+            mesh_bundle_inserts.insert(entity, bundle);
         }
 
         commands.insert_batch(mesh_bundle_inserts);
     }
 }
 
+fn get_mesh_components_from_info(
+    asset_server: &Res<AssetServer>,
+    tilemap_mesh_data: &TilemapMeshData,
+    mesh_info: MeshInfo,
+) -> (Mesh3d, MeshMaterial3d<StandardMaterial>, Transform) {
+    let MeshInfo {
+        translation,
+        vertices,
+        indices,
+        texture_uvs,
+        normals,
+        texture_index,
+    } = mesh_info;
+
+    let mesh = Mesh::new(
+        PrimitiveTopology::TriangleList,
+        RenderAssetUsages::default(),
+    )
+    .with_inserted_attribute(Mesh::ATTRIBUTE_POSITION, vertices)
+    .with_inserted_attribute(Mesh::ATTRIBUTE_UV_0, texture_uvs)
+    .with_inserted_attribute(Mesh::ATTRIBUTE_NORMAL, normals)
+    .with_inserted_indices(Indices::U32(indices));
+
+    let material = texture_index
+        .map(|texture_index| {
+            tilemap_mesh_data
+                .texture_materials
+                .get(texture_index)
+                .unwrap()
+                .clone()
+        })
+        .unwrap_or(tilemap_mesh_data.missing.clone());
+
+    let bundle = (
+        Mesh3d(asset_server.add(mesh)),
+        MeshMaterial3d(material),
+        Transform::from_translation(translation),
+    );
+    bundle
+}
+
+#[derive(Debug, Resource)]
+struct TilemapMeshData {
+    texture: Handle<Image>,
+    textures: Vec<Handle<Image>>,
+    tile_size: [u32; 2],
+    texture_materials: Vec<Handle<StandardMaterial>>,
+    hovering: Handle<StandardMaterial>,
+    selected: Handle<StandardMaterial>,
+    missing: Handle<StandardMaterial>,
+}
+
+#[derive(Default)]
+struct MeshInfo {
+    translation: Vec3,
+    vertices: Vec<[f32; 3]>,
+    indices: Vec<u32>,
+    texture_uvs: Vec<[f32; 2]>,
+    normals: Vec<[f32; 3]>,
+    texture_index: Option<usize>,
+}
+
 fn create_mesh_from_tile_data(
     tile: Entity,
     tile_data_query: &Query<(&TilePos, Option<&TileTextureIndex>, &TileDepth, &TileSlope)>,
-) -> Option<(
-    Vec<[f32; 3]>,
-    Vec<u32>,
-    Vec<[f32; 2]>,
-    Vec<[f32; 3]>,
-    Option<usize>,
-)> {
-    let mut mesh: (
-        Vec<[f32; 3]>,
-        Vec<u32>,
-        Vec<[f32; 2]>,
-        Vec<[f32; 3]>,
-        Option<usize>,
-    ) = Default::default();
-    let (
-        ref mut vertices,
-        ref mut indices,
-        ref mut texture_uvs,
-        ref mut normals,
-        ref mut texture_index,
-    ) = mesh;
+) -> Option<MeshInfo> {
+    let mut mesh: MeshInfo = Default::default();
+    let MeshInfo {
+        translation,
+        vertices,
+        indices,
+        texture_uvs,
+        normals,
+        texture_index,
+    } = &mut mesh;
 
     let (tile_pos, tile_texture, TileDepth(tile_depth), TileSlope(tile_slope)) =
         tile_data_query.get(tile).ok()?;
 
-    let x_pos = tile_pos.x as f32;
-    let y_pos = -(tile_pos.y as f32);
+    *translation = Vec3::new(tile_pos.x as f32, -(tile_pos.y as f32), 0.0);
 
     let (vertex_data, index_data) = calculate_mesh_data(
-        x_pos,
-        y_pos,
         *tile_depth as f32,
         Vec3::from((*tile_slope, 0.)),
         0.0,
@@ -204,6 +249,7 @@ fn create_mesh_from_tile_data(
         .collect();
     *normals = vertex_data.clone().into_iter().map(|(_, _, n)| n).collect();
     *indices = index_data;
+
     tile_texture.map(|texture| texture_index.insert(texture.0 as usize));
 
     return Some(mesh);
@@ -235,8 +281,26 @@ fn move_on_drag(
     if kb.pressed(KeyCode::ShiftLeft) {
         return;
     }
-    let (mut transform) = transforms.get_mut(drag.entity()).unwrap();
+    let mut transform = transforms.get_mut(drag.entity()).unwrap();
     transform.translation.y -= drag.delta.y * 0.01;
+    // tile_change_writer.send(tile_change.clone());
+}
+
+fn adjust_on_release(
+    drag: Trigger<Pointer<DragEnd>>,
+    mut transforms: Query<(&mut Transform, &mut TileDepth)>,
+    // mut tile_change_writer: EventWriter<TileChangeTracker>,
+    kb: Res<ButtonInput<KeyCode>>,
+) {
+    if drag.button != PointerButton::Primary {
+        return;
+    }
+    if kb.pressed(KeyCode::ShiftLeft) {
+        return;
+    }
+    let (mut transform, mut depth) = transforms.get_mut(drag.entity()).unwrap();
+    **depth = transform.translation.y.floor() as i64;
+    transform.translation.y = 0.0;
     // tile_change_writer.send(tile_change.clone());
 }
 
@@ -326,40 +390,14 @@ fn call_save_event(kb: Res<ButtonInput<KeyCode>>, mut saves: EventWriter<SaveEve
     }
 }
 
-// fn manage_tile_refresh_events(
-//     mut tile_changes: EventReader<TileChangeTracker>,
-//     mut commands: Commands,
-// ) {
-//     let mut entities_to_refresh: HashMap<&Entity, Vec<TileChanged>> = HashMap::new();
-//     for event in tile_changes.read() {
-//         for entity in event.0.iter() {
-//             if let Some(events) = entities_to_refresh.get_mut(entity) {
-//                 events.push(event);
-//             } else {
-//                 entities_to_refresh.insert(entity, vec![event]);
-//             }
-//         }
-//     }
-//     for (entity, events) in entities_to_refresh {
-//         commands.trigger();
-//     }
-//     tile_changes.clear();
-// }
-
-// /// When this tile is changed, let all of these entities know
-// #[derive(Debug, Clone, Event)]
-// struct TileChangeTracker(Vec<Entity>);
-// #[derive(Debug, Clone, Copy, Event)]
-// struct TileChanged { slope: bool }
-
 fn calculate_mesh_data(
-    x_pos: f32,
-    y_pos: f32,
     depth: f32,
     slope: Vec3,
     slope_i: f32,
     wall_counts: [u32; 4],
 ) -> (Vec<([f32; 3], [f32; 2], [f32; 3])>, Vec<u32>) {
+    let x_pos: f32 = 0.0;
+    let y_pos: f32 = 0.0;
     let mut vertices = vec![];
     let mut indices = vec![];
 
@@ -405,6 +443,9 @@ fn calculate_mesh_data(
     (vertices, indices)
 }
 
+/// generates the vertex data for a sloped wall, given:
+/// - the base depth of the tile
+/// - the two vertices that form the *top* line of the sloped wall
 fn slope_wall_data(
     depth: f32,
     v1: [f32; 3],

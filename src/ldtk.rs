@@ -301,7 +301,7 @@ fn spawn_map_components(commands: &mut Commands, ldtk_map: &LdtkMap, map_config:
     }
 }
 
-#[derive(Debug, Reflect, Component, Default, Clone)]
+#[derive(Debug, Reflect, Component, Default, Clone, Deref, DerefMut)]
 pub struct TileDepth(pub i64);
 
 /// Indicates the tile to use as reference for the slope height.
