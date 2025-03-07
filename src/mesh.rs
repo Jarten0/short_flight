@@ -6,12 +6,9 @@ use bevy::render::mesh::Indices;
 use bevy::render::mesh::PrimitiveTopology;
 use bevy_ecs_tilemap::prelude::*;
 use image::ImageBuffer;
-use serde::Serialize;
 use short_flight::ldtk::TileSlope;
 use short_flight::serialize_to_file;
-use std::collections::{HashMap, HashSet};
-use std::fs::File;
-use std::io::Write;
+use std::collections::HashMap;
 
 pub struct TileMeshManagerPlugin;
 
@@ -48,7 +45,7 @@ fn spawn_mesh(
     tiles: Query<(&TilePos, Option<&TileTextureIndex>, &TileDepth, &TileSlope)>,
 ) {
     for event in events.read() {
-        log::info!("Spawning new mesh");
+        log::info!("Spawning new mesh [{:?}]", event);
 
         let (tilemap_storage, tilemap_texture) = tilemaps.get(event.tilemap).unwrap();
 
@@ -233,7 +230,7 @@ fn create_mesh_from_tile_data(
     let (tile_pos, tile_texture, TileDepth(tile_depth), TileSlope(tile_slope)) =
         tile_data_query.get(tile).ok()?;
 
-    *translation = Vec3::new(tile_pos.x as f32, -(tile_pos.y as f32), 0.0);
+    *translation = Vec3::new(tile_pos.x as f32, tile_pos.y as f32, 0.0);
 
     let (vertex_data, index_data) = calculate_mesh_data(
         *tile_depth as f32,
@@ -439,6 +436,8 @@ fn calculate_mesh_data(
         }
     }
     insert(top_vertices);
+
+    vertices.iter_mut().for_each(|v| v.0[1] += depth);
 
     (vertices, indices)
 }

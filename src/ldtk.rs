@@ -1,3 +1,4 @@
+use bevy::color::palettes;
 use bevy::prelude::Asset;
 use bevy_ecs_tilemap::{
     helpers::geometry::get_tilemap_center_transform,
@@ -117,8 +118,9 @@ pub fn process_loaded_tile_maps(
     mut map_events: EventReader<AssetEvent<LdtkMap>>,
     maps: Res<Assets<LdtkMap>>,
     query: Query<(Entity, &LdtkMapHandle, &LdtkMapConfig)>,
-    new_maps: Query<&LdtkMapHandle, Added<LdtkMapHandle>>,
+    // new_maps: Query<&LdtkMapHandle, Added<LdtkMapHandle>>,
 ) {
+    // log::info!("Begun processing loaded tile maps");
     let mut changed_maps = Vec::<AssetId<LdtkMap>>::default();
     for event in map_events.read() {
         match event {
@@ -139,13 +141,14 @@ pub fn process_loaded_tile_maps(
             _ => continue,
         }
     }
+    // log::info!("Events iterated");
 
     // If we have new map entities, add them to the changed_maps list
-    let mut other: Vec<AssetId<LdtkMap>> = new_maps
-        .iter()
-        .map(|new_map_handle| new_map_handle.0.id())
-        .collect();
-    changed_maps.append(&mut other);
+    // let mut other: Vec<AssetId<LdtkMap>> = new_maps
+    //     .iter()
+    //     .map(|new_map_handle| new_map_handle.0.id())
+    //     .collect();
+    // changed_maps.append(&mut other);
 
     let changed_maps = changed_maps.iter().filter_map(|changed_map| {
         query
@@ -155,7 +158,10 @@ pub fn process_loaded_tile_maps(
             .map(|bundle| (changed_map, bundle))
     });
 
+    // log::info!("{} Events iterated", changed_maps.clone().count());
+
     for (changed_map, (entity, map_handle, map_config)) in changed_maps {
+        log::info!("Processing changed map!");
         assert!(
             map_handle.0.id() == *changed_map,
             "Invalid deviation from the example"
@@ -237,14 +243,9 @@ fn spawn_map_components(commands: &mut Commands, ldtk_map: &LdtkMap, map_config:
             .chain(layer.auto_layer_tiles.iter())
             .enumerate()
         {
-            let position = {
-                let mut position = TilePos {
-                    x: (tile.px[0] / default_grid_size) as u32,
-                    y: (tile.px[1] / default_grid_size) as u32,
-                };
-
-                position.y = map_tile_count_y - position.y - 1;
-                position
+            let position = TilePos {
+                x: ((tile.px[0]) / default_grid_size) as u32,
+                y: ((tile.px[1]) / default_grid_size) as u32,
             };
 
             let tile_depth = tile_depth_map
@@ -284,11 +285,10 @@ fn spawn_map_components(commands: &mut Commands, ldtk_map: &LdtkMap, map_config:
                     storage,
                     texture: TilemapTexture::Single(texture),
                     tile_size,
-                    transform: get_tilemap_center_transform(
-                        &size,
-                        &tile_size.into(),
-                        &TilemapType::default(),
-                        layer_id as f32,
+                    transform: Transform::from_xyz(
+                        level.world_x as f32 / size.x as f32,
+                        0.0,
+                        level.world_y as f32 / size.y as f32,
                     ),
                     // visibility: Visibility::Visible,
                     ..default()

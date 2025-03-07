@@ -25,12 +25,13 @@ fn main() {
         .add_plugins(MeshPickingPlugin)
         .add_plugins(DefaultEditorCamPlugins)
         .add_systems(PreStartup, setup)
+        .add_systems(Update, deferred_mesh_spawn)
         .add_systems(Update, (draw_mesh_intersections, pause_on_space))
         .add_event::<SpawnMeshEvent>()
         .run();
 }
 
-fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
+fn setup(mut commands: Commands) {
     commands.spawn((
         DirectionalLight {
             illuminance: light_consts::lux::OVERCAST_DAY,
@@ -52,12 +53,24 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
             .with_translation(Vec3::new(0.0, 20.0, 0.0)),
         EditorCam::default().with_initial_anchor_depth(20.0),
     ));
+}
 
-    let tilemap = asset_server.load("tilemap.ldtk");
-
+fn deferred_mesh_spawn(
+    mut commands: Commands,
+    asset_server: Res<AssetServer>,
+    query: Query<&ldtk::LdtkMapHandle>,
+) {
+    let handle = asset_server
+        .get_handle("tilemap.ldtk")
+        .unwrap_or_else(|| asset_server.load::<ldtk::LdtkMap>("tilemap.ldtk"));
+    for item in query.iter() {
+        if item.0 == handle {
+            return;
+        }
+    }
     commands.spawn((
         LdtkMapBundle {
-            ldtk_map: ldtk::LdtkMapHandle(tilemap),
+            ldtk_map: ldtk::LdtkMapHandle(handle),
             ldtk_map_config: ldtk::LdtkMapConfig { selected_level: 0 },
             transform: Transform::from_xyz(0.0, 0.0, 0.0),
             global_transform: GlobalTransform::default(),
