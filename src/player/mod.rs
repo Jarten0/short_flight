@@ -36,8 +36,15 @@ fn control_shaymin(
     mut camera: Option<Single<&mut Transform, With<Camera3d>>>,
     kb: Res<ButtonInput<KeyCode>>,
 ) {
+    if kb.pressed(KeyCode::ShiftLeft) {
+        return;
+    }
+    if kb.pressed(KeyCode::Space) {
+        return;
+    }
     let (mut transform, shaymin) = shaymin.unwrap().into_inner();
     let mut cam_transform = camera.unwrap().into_inner();
+
     transform.translation += {
         let mut dir: Vec3 = Vec3::ZERO;
         if kb.pressed(KeyCode::KeyA) {

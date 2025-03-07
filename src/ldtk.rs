@@ -52,6 +52,20 @@ pub struct LdtkMapBundle {
     pub global_transform: GlobalTransform,
 }
 
+#[derive(Debug, Reflect, Component, Default, Clone, Deref, DerefMut)]
+pub struct TileDepth(pub i64);
+
+#[derive(Debug, Reflect, Component, Default, Clone)]
+pub struct TileSlope(pub Vec2);
+
+#[derive(Debug, Event, Reflect, Clone)]
+pub struct SpawnMeshEvent {
+    pub tilemap: Entity,
+}
+
+pub type TileDepthMapSerialization = HashMap<[u32; 2], i64>;
+pub type TileSlopeMapSerialization = HashMap<[u32; 2], Vec2>;
+
 pub struct LdtkLoader;
 
 #[derive(Debug, Error)]
@@ -236,6 +250,7 @@ fn spawn_map_components(commands: &mut Commands, ldtk_map: &LdtkMap, map_config:
 
         // Create tiles for this layer from LDtk's grid_tiles and auto_layer_tiles
         let mut storage = TileStorage::empty(size);
+        let mut children = vec![];
 
         for (index, tile) in layer
             .grid_tiles
@@ -263,20 +278,21 @@ fn spawn_map_components(commands: &mut Commands, ldtk_map: &LdtkMap, map_config:
                     position,
                     tilemap_id: TilemapId(map_entity),
                     texture_index: TileTextureIndex(tile.t as u32),
-                    // Hidden since we use a mesh to draw them in 3d
-                    // visible: TileVisible(false),
                     ..default()
                 },
                 TileDepth(tile_depth),
                 TileSlope(Vec2::from(tile_slope)),
-                Name::new(format!("Tile {}-{}", uid, index)),
+                Name::new(format!("Tile {}-{}", layer_id, index)),
             );
 
-            storage.set(&position, commands.spawn(bundle).id());
+            let tile_entity = commands.spawn(bundle).id();
+            children.push(tile_entity.clone());
+            storage.set(&position, tile_entity);
         }
 
         let tilemap = commands
             .entity(map_entity)
+            .add_children(&children)
             .insert((
                 TilemapBundle {
                     grid_size: tile_size.into(),
@@ -290,31 +306,12 @@ fn spawn_map_components(commands: &mut Commands, ldtk_map: &LdtkMap, map_config:
                         0.0,
                         level.world_y as f32 / size.y as f32,
                     ),
-                    // visibility: Visibility::Visible,
                     ..default()
                 },
-                Name::new(format!("Tilemap #{}", uid)),
+                Name::new(format!("Tilemap #{}", layer_id)),
             ))
             .id();
 
         commands.send_event(SpawnMeshEvent { tilemap });
     }
 }
-
-#[derive(Debug, Reflect, Component, Default, Clone, Deref, DerefMut)]
-pub struct TileDepth(pub i64);
-
-/// Indicates the tile to use as reference for the slope height.
-/// `TilePos` is the positioning of the tile *relative* to the current tile.
-///
-/// If TilePos is 0,0, then there is no slope here.
-#[derive(Debug, Reflect, Component, Default, Clone)]
-pub struct TileSlope(pub Vec2);
-
-#[derive(Debug, Event, Reflect, Clone)]
-pub struct SpawnMeshEvent {
-    pub tilemap: Entity,
-}
-
-pub type TileDepthMapSerialization = HashMap<[u32; 2], i64>;
-pub type TileSlopeMapSerialization = HashMap<[u32; 2], Vec2>;

@@ -12,15 +12,75 @@ use std::collections::HashMap;
 
 pub struct TileMeshManagerPlugin;
 
+#[derive(Debug, Resource)]
+struct TilemapMeshData {
+    texture: Handle<Image>,
+    textures: Vec<Handle<Image>>,
+    tile_size: [u32; 2],
+    texture_materials: Vec<Handle<StandardMaterial>>,
+    hovering: Handle<StandardMaterial>,
+    selected: Handle<StandardMaterial>,
+    missing: Handle<StandardMaterial>,
+}
+
+#[derive(Default)]
+struct MeshInfo {
+    translation: Vec3,
+    vertices: Vec<[f32; 3]>,
+    indices: Vec<u32>,
+    texture_uvs: Vec<[f32; 2]>,
+    normals: Vec<[f32; 3]>,
+    texture_index: Option<usize>,
+}
+
+#[derive(Debug, Clone, Copy, Event, Reflect)]
+struct GoSaveTheMesh;
+
+#[derive(Debug, Clone, Copy, Event, Reflect)]
+struct TileChanged {
+    tile: Entity,
+}
+
+#[derive(Debug, Resource, Reflect, Default)]
+enum TilePickedMode {
+    #[default]
+    Idle,
+    Move {
+        tile: Entity,
+    },
+    Drag {
+        tile: Entity,
+    },
+}
+
+impl TilePickedMode {
+    fn set(&mut self, mode: TilePickedMode) {
+        match self {
+            TilePickedMode::Idle => *self = mode,
+            TilePickedMode::Move { tile: _ } => {
+                if let TilePickedMode::Idle = mode {
+                    *self = TilePickedMode::Idle
+                }
+            }
+            TilePickedMode::Drag { tile: _ } => {
+                if let TilePickedMode::Idle = mode {
+                    *self = TilePickedMode::Idle
+                }
+            }
+        }
+    }
+}
+
 impl Plugin for TileMeshManagerPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(
             Update,
             (
-                spawn_mesh.after(ldtk::process_loaded_tile_maps),
+                update_individual_tile_mesh,
+                spawn_massive_tilemap_mesh.after(ldtk::process_loaded_tile_maps),
                 (
                     call_save_event,
-                    |mut commands: Commands, mut event_reader: EventReader<SaveEvent>| {
+                    |mut commands: Commands, mut event_reader: EventReader<GoSaveTheMesh>| {
                         for event in event_reader.read() {
                             commands.trigger(*event);
                         }
@@ -30,13 +90,15 @@ impl Plugin for TileMeshManagerPlugin {
                 // manage_tile_refresh_events,
             ),
         )
-        .add_event::<SaveEvent>()
+        .add_event::<GoSaveTheMesh>()
+        .add_event::<TileChanged>()
+        .insert_resource(TilePickedMode::default())
         // .add_observer(|trigger: Trigger<>|)
         .add_observer(save_tile_data);
     }
 }
 
-fn spawn_mesh(
+fn spawn_massive_tilemap_mesh(
     mut events: EventReader<SpawnMeshEvent>,
     mut commands: Commands,
     asset_server: Res<AssetServer>,
@@ -120,34 +182,61 @@ fn spawn_mesh(
             missing,
         };
 
-        let tilemap_mesh_data: &TilemapMeshData = &tilemap_mesh_data;
+        let tilemap_mesh_data_ref: &TilemapMeshData = &tilemap_mesh_data;
 
         let mut mesh_bundle_inserts = HashMap::new();
 
         for (entity, mesh_info) in mesh_information {
-            let bundle = get_mesh_components_from_info(&asset_server, tilemap_mesh_data, mesh_info);
+            let bundle =
+                get_mesh_components_from_info(&asset_server, tilemap_mesh_data_ref, mesh_info);
 
             commands
                 .entity(entity)
                 .observe(update_material_on::<Pointer<Over>>(
-                    tilemap_mesh_data.hovering.clone(),
+                    tilemap_mesh_data_ref.hovering.clone(),
                 ))
                 .observe(update_material_on::<Pointer<Out>>(bundle.1 .0.clone()))
                 .observe(update_material_on::<Pointer<Down>>(
-                    tilemap_mesh_data.selected.clone(),
+                    tilemap_mesh_data_ref.selected.clone(),
                 ))
                 .observe(update_material_on::<Pointer<Up>>(
-                    tilemap_mesh_data.hovering.clone(),
+                    tilemap_mesh_data_ref.hovering.clone(),
                 ))
                 .observe(move_on_drag)
-                .observe(set_tile_slope)
-                .observe(set_tile_depth_out)
-                .observe(set_tile_depth_up);
+                .observe(adjust_on_release)
+                .observe(set_tile_slope);
 
             mesh_bundle_inserts.insert(entity, bundle);
         }
 
         commands.insert_batch(mesh_bundle_inserts);
+        commands.insert_resource(tilemap_mesh_data);
+    }
+}
+
+fn update_individual_tile_mesh(
+    mut commands: Commands,
+    mut changed_tiles: EventReader<TileChanged>,
+    tile_data_query: Query<(&TilePos, Option<&TileTextureIndex>, &TileDepth, &TileSlope)>,
+    asset_server: Res<AssetServer>,
+    tilemap_mesh_data: Option<Res<TilemapMeshData>>,
+) {
+    let Some(tilemap_mesh_data) = tilemap_mesh_data else {
+        return;
+    };
+    for event in changed_tiles.read() {
+        let Some(mesh_info) = create_mesh_from_tile_data(event.tile, &tile_data_query) else {
+            log::error!("Could not create updated mesh from current tile data! (Wrong entity being queried?)");
+            continue;
+        };
+
+        commands
+            .entity(event.tile)
+            .insert(get_mesh_components_from_info(
+                &asset_server,
+                &tilemap_mesh_data,
+                mesh_info,
+            ));
     }
 }
 
@@ -192,27 +281,6 @@ fn get_mesh_components_from_info(
     bundle
 }
 
-#[derive(Debug, Resource)]
-struct TilemapMeshData {
-    texture: Handle<Image>,
-    textures: Vec<Handle<Image>>,
-    tile_size: [u32; 2],
-    texture_materials: Vec<Handle<StandardMaterial>>,
-    hovering: Handle<StandardMaterial>,
-    selected: Handle<StandardMaterial>,
-    missing: Handle<StandardMaterial>,
-}
-
-#[derive(Default)]
-struct MeshInfo {
-    translation: Vec3,
-    vertices: Vec<[f32; 3]>,
-    indices: Vec<u32>,
-    texture_uvs: Vec<[f32; 2]>,
-    normals: Vec<[f32; 3]>,
-    texture_index: Option<usize>,
-}
-
 fn create_mesh_from_tile_data(
     tile: Entity,
     tile_data_query: &Query<(&TilePos, Option<&TileTextureIndex>, &TileDepth, &TileSlope)>,
@@ -230,7 +298,7 @@ fn create_mesh_from_tile_data(
     let (tile_pos, tile_texture, TileDepth(tile_depth), TileSlope(tile_slope)) =
         tile_data_query.get(tile).ok()?;
 
-    *translation = Vec3::new(tile_pos.x as f32, tile_pos.y as f32, 0.0);
+    *translation = Vec3::new(tile_pos.x as f32, 0.0, tile_pos.y as f32);
 
     let (vertex_data, index_data) = calculate_mesh_data(
         *tile_depth as f32,
@@ -269,7 +337,7 @@ fn update_material_on<E>(
 fn move_on_drag(
     drag: Trigger<Pointer<Drag>>,
     mut transforms: Query<(&mut Transform)>,
-    // mut tile_change_writer: EventWriter<TileChangeTracker>,
+    mut picking: ResMut<TilePickedMode>,
     kb: Res<ButtonInput<KeyCode>>,
 ) {
     if drag.button != PointerButton::Primary {
@@ -278,15 +346,18 @@ fn move_on_drag(
     if kb.pressed(KeyCode::ShiftLeft) {
         return;
     }
-    let mut transform = transforms.get_mut(drag.entity()).unwrap();
-    transform.translation.y -= drag.delta.y * 0.01;
-    // tile_change_writer.send(tile_change.clone());
+    picking.set(TilePickedMode::Move { tile: drag.target });
+    if let TilePickedMode::Move { tile } = *picking {
+        let mut transform = transforms.get_mut(drag.entity()).unwrap();
+        transform.translation.y -= drag.delta.y * 0.01;
+    }
 }
 
 fn adjust_on_release(
     drag: Trigger<Pointer<DragEnd>>,
-    mut transforms: Query<(&mut Transform, &mut TileDepth)>,
-    // mut tile_change_writer: EventWriter<TileChangeTracker>,
+    mut transforms: Query<(&mut TileDepth, &Transform)>,
+    mut tile_change_writer: EventWriter<TileChanged>,
+    mut picking: ResMut<TilePickedMode>,
     kb: Res<ButtonInput<KeyCode>>,
 ) {
     if drag.button != PointerButton::Primary {
@@ -295,16 +366,18 @@ fn adjust_on_release(
     if kb.pressed(KeyCode::ShiftLeft) {
         return;
     }
-    let (mut transform, mut depth) = transforms.get_mut(drag.entity()).unwrap();
-    **depth = transform.translation.y.floor() as i64;
-    transform.translation.y = 0.0;
-    // tile_change_writer.send(tile_change.clone());
+    picking.set(TilePickedMode::Idle);
+    let (mut depth, transform) = transforms.get_mut(drag.entity()).unwrap();
+    **depth = transform.translation.y.ceil() as i64;
+    tile_change_writer.send(TileChanged { tile: drag.target });
 }
 
 fn set_tile_slope(
-    drag: Trigger<Pointer<Down>>,
+    drag: Trigger<Pointer<bevy_picking::events::Drag>>,
     mut slopes: Query<&mut TileSlope>,
+    mut tile_change_writer: EventWriter<TileChanged>,
     kb: Res<ButtonInput<KeyCode>>,
+    mut picking: ResMut<TilePickedMode>,
 ) {
     if drag.button != PointerButton::Primary {
         return;
@@ -312,49 +385,30 @@ fn set_tile_slope(
     if !kb.pressed(KeyCode::ShiftLeft) {
         return;
     }
+    let TilePickedMode::Drag { tile } = *picking else {
+        return;
+    };
     let mut slope = slopes.get_mut(drag.entity()).unwrap();
     if kb.just_pressed(KeyCode::KeyA) {
         slope.0.x -= 1.0;
+        tile_change_writer.send(TileChanged { tile });
     }
     if kb.just_pressed(KeyCode::KeyD) {
         slope.0.x += 1.0;
+        tile_change_writer.send(TileChanged { tile });
     }
     if kb.just_pressed(KeyCode::KeyW) {
         slope.0.y += 1.0;
+        tile_change_writer.send(TileChanged { tile });
     }
     if kb.just_pressed(KeyCode::KeyS) {
         slope.0.y -= 1.0;
+        tile_change_writer.send(TileChanged { tile });
     }
 }
-
-fn set_tile_depth_up(
-    drag: Trigger<Pointer<DragEnd>>,
-    transforms: Query<(&mut TileDepth, &mut Transform)>,
-) {
-    if drag.button != PointerButton::Primary {
-        return;
-    }
-    set_tile_depth(drag.entity(), transforms);
-}
-
-fn set_tile_depth_out(
-    drag: Trigger<Pointer<Out>>,
-    transforms: Query<(&mut TileDepth, &mut Transform)>,
-) {
-    set_tile_depth(drag.entity(), transforms);
-}
-
-fn set_tile_depth(entity: Entity, mut transforms: Query<(&mut TileDepth, &mut Transform)>) {
-    let (mut depth, mut transform) = transforms.get_mut(entity).unwrap();
-    transform.translation.y = transform.translation.y.floor();
-    depth.0 = transform.translation.y as i64;
-}
-
-#[derive(Debug, Clone, Copy, Event, Reflect)]
-struct SaveEvent;
 
 fn save_tile_data(
-    _save: Trigger<SaveEvent>,
+    _save: Trigger<GoSaveTheMesh>,
     tilemaps: Query<&TileStorage>,
     tiles: Query<(&TilePos, &TileDepth, &TileSlope)>,
 ) {
@@ -380,10 +434,10 @@ fn save_tile_data(
     }
 }
 
-fn call_save_event(kb: Res<ButtonInput<KeyCode>>, mut saves: EventWriter<SaveEvent>) {
+fn call_save_event(kb: Res<ButtonInput<KeyCode>>, mut saves: EventWriter<GoSaveTheMesh>) {
     if kb.just_pressed(KeyCode::KeyI) {
         log::info!("Saving tile depth map...");
-        saves.send(SaveEvent);
+        saves.send(GoSaveTheMesh);
     }
 }
 
@@ -417,7 +471,10 @@ fn calculate_mesh_data(
 
     let top_vertices = top_vertices(x_pos, y_pos, corners);
 
-    for (side_index, side) in [[0, 1], [1, 2], [2, 3], [3, 0]].into_iter().enumerate() {
+    for (side_index, side) in
+        // [[0, 1], [1, 2], [2, 3], [3, 0]]
+        [[1, 0], [0, 3], [3, 2], [2, 1]].into_iter().enumerate()
+    {
         let [v1, v2] = [top_vertices.0[side[0]].0, top_vertices.0[side[1]].0];
         insert(slope_wall_data(depth, v1, v2));
 
@@ -492,12 +549,12 @@ fn top_vertices(
 ) -> (Vec<([f32; 3], [f32; 2], [f32; 3])>, Vec<u32>) {
     (
         vec![
-            ([x_pos, corners[0], y_pos], [0., 0.], [0., 1., 0.]),
-            ([x_pos + 1., corners[1], y_pos], [1., 0.], [0., 1., 0.]),
-            ([x_pos + 1., corners[2], y_pos + 1.], [1., 1.], [0., 1., 0.]),
-            ([x_pos, corners[3], y_pos + 1.], [0., 1.], [0., 1., 0.]),
+            ([x_pos + 1., corners[1], y_pos], [1., 0.], [0., 1., 0.]), // tr
+            ([x_pos, corners[0], y_pos], [0., 0.], [0., 1., 0.]),      // tl
+            ([x_pos, corners[3], y_pos + 1.], [0., 1.], [0., 1., 0.]), // bl
+            ([x_pos + 1., corners[2], y_pos + 1.], [1., 1.], [0., 1., 0.]), // br
         ],
-        vec![2, 1, 0, 3, 2, 0],
+        vec![0, 1, 2, 2, 3, 0],
     )
 }
 
@@ -510,27 +567,42 @@ fn wall_vertices(
     side_index: usize,
 ) -> (Vec<([f32; 3], [f32; 2], [f32; 3])>, Vec<u32>) {
     let normal = match side_index {
-        0 => [-1., 0., 0.],
-        1 => [0., 0., 1.],
-        2 => [1., 0., 0.],
-        3 => [0., 0., -1.],
+        0 => [0., 0., -1.],
+        1 => [1., 0., 0.],
+        2 => [0., 0., 1.],
+        3 => [-1., 0., 0.],
         _ => panic!(),
     };
+    let uv = match side_index {
+        // Back
+        0 => [[1.0, 0.0], [0.0, 0.0], [0.0, 1.0], [1.0, 1.0]],
+        // Front
+        2 => [[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]],
+        // Right
+        1 => [[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]],
+        // Left
+        3 => [[1.0, 0.0], [0.0, 0.0], [0.0, 1.0], [1.0, 1.0]],
+        // Top
+        4 => [[1.0, 0.0], [0.0, 0.0], [0.0, 1.0], [1.0, 1.0]],
+        // Bottom
+        5 => [[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]],
+        _ => [[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]],
+    };
     let vertices = vec![
-        (wall_vertex_1.clone(), [0., 0.], normal.clone()),
-        (wall_vertex_2.clone(), [1., 0.], normal.clone()),
+        (wall_vertex_1.clone(), uv[0], normal.clone()),
+        (wall_vertex_2.clone(), uv[1], normal.clone()),
         {
             let mut v = wall_vertex_2.clone();
             v[1] -= 1.0;
-            (v, [1., 1.], normal.clone())
+            (v, uv[2], normal.clone())
         },
         {
             let mut v = wall_vertex_1.clone();
             v[1] -= 1.0;
-            (v, [0., 1.], normal.clone())
+            (v, uv[3], normal.clone())
         },
     ];
-    let indices = vec![0, 1, 2, 0, 2, 3];
+    let indices = vec![0, 1, 2, 2, 3, 0];
     (vertices, indices)
 }
 
