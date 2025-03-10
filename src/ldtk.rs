@@ -1,23 +1,61 @@
-use bevy::color::palettes;
+use crate::deserialize_file;
 use bevy::prelude::Asset;
-use bevy_ecs_tilemap::{
-    helpers::geometry::get_tilemap_center_transform,
-    map::{TilemapId, TilemapSize, TilemapTexture, TilemapTileSize},
-    tiles::{TileBundle, TilePos, TileStorage, TileTextureIndex},
-    TilemapBundle,
-};
-use std::ops::Deref;
-use std::{collections::HashMap, io::ErrorKind};
-use thiserror::Error;
-
 use bevy::{asset::io::Reader, reflect::TypePath};
 use bevy::{
     asset::{AssetLoader, AssetPath, LoadContext},
     prelude::*,
 };
 use bevy_ecs_tilemap::map::TilemapType;
+use bevy_ecs_tilemap::{
+    map::{TilemapId, TilemapSize, TilemapTexture, TilemapTileSize},
+    tiles::{TileBundle, TilePos, TileStorage, TileTextureIndex},
+    TilemapBundle,
+};
+use serde::{Deserialize, Serialize};
+use std::{collections::HashMap, io::ErrorKind};
+use thiserror::Error;
 
-use crate::deserialize_file;
+/// Initialized differently from the LDTK map data, this determines how high up the object is.
+// There's no settlement on if the value will be represented as an `i64` in the future
+// so for now, just use f32 and i64 to access the value, and From to set.
+#[derive(Debug, Reflect, Component, Default, Clone, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct TileDepth(i64);
+
+impl TileDepth {
+    /// use this if
+    #[inline]
+    pub fn f32(&self) -> f32 {
+        self.0 as f32
+    }
+
+    /// use this instead of accessing if potentially using an f32 converted to an i64 is future proof
+    #[inline]
+    pub fn i64(&self) -> i64 {
+        self.0
+    }
+}
+
+impl Into<f32> for TileDepth {
+    fn into(self) -> f32 {
+        self.0 as f32
+    }
+}
+
+impl From<f32> for TileDepth {
+    fn from(value: f32) -> Self {
+        Self(value as i64)
+    }
+}
+impl From<i64> for TileDepth {
+    fn from(value: i64) -> Self {
+        Self(value)
+    }
+}
+
+#[derive(Debug, Reflect, Component, Default, Clone, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct TileSlope(pub Vec2);
 
 #[derive(Default)]
 pub struct LdtkPlugin;
@@ -52,19 +90,10 @@ pub struct LdtkMapBundle {
     pub global_transform: GlobalTransform,
 }
 
-#[derive(Debug, Reflect, Component, Default, Clone, Deref, DerefMut)]
-pub struct TileDepth(pub i64);
-
-#[derive(Debug, Reflect, Component, Default, Clone)]
-pub struct TileSlope(pub Vec2);
-
 #[derive(Debug, Event, Reflect, Clone)]
 pub struct SpawnMeshEvent {
     pub tilemap: Entity,
 }
-
-pub type TileDepthMapSerialization = HashMap<[u32; 2], i64>;
-pub type TileSlopeMapSerialization = HashMap<[u32; 2], Vec2>;
 
 pub struct LdtkLoader;
 
@@ -194,9 +223,9 @@ pub fn process_loaded_tile_maps(
 }
 
 fn spawn_map_components(commands: &mut Commands, ldtk_map: &LdtkMap, map_config: &LdtkMapConfig) {
-    let tile_depth_map: TileDepthMapSerialization =
+    let mut tile_depth_map: HashMap<[u32; 2], TileDepth> =
         deserialize_file("assets/depth_maps/tile_depth_map.ron").unwrap_or_default();
-    let tile_slope_map: TileSlopeMapSerialization =
+    let mut tile_slope_map: HashMap<[u32; 2], TileSlope> =
         deserialize_file("assets/depth_maps/tile_slope_map.ron").unwrap_or_default();
 
     log::info!("Found tilemap depth data of {} tiles", tile_depth_map.len());
@@ -264,13 +293,11 @@ fn spawn_map_components(commands: &mut Commands, ldtk_map: &LdtkMap, map_config:
             };
 
             let tile_depth = tile_depth_map
-                .get(&[position.x, position.y])
-                .map(|item| *item)
+                .remove(&[position.x, position.y])
                 .unwrap_or_default();
 
             let tile_slope = tile_slope_map
-                .get(&[position.x, position.y])
-                .map(|item| *item)
+                .remove(&[position.x, position.y])
                 .unwrap_or_default();
 
             let bundle = (
@@ -280,8 +307,8 @@ fn spawn_map_components(commands: &mut Commands, ldtk_map: &LdtkMap, map_config:
                     texture_index: TileTextureIndex(tile.t as u32),
                     ..default()
                 },
-                TileDepth(tile_depth),
-                TileSlope(Vec2::from(tile_slope)),
+                tile_depth,
+                tile_slope,
                 Name::new(format!("Tile {}-{}", layer_id, index)),
             );
 

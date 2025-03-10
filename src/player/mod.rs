@@ -60,7 +60,7 @@ fn control_shaymin(
 
     if anim.pool[&anim.current].can_move() {
         if let Some(movement) = manage_movement(kb, &mut transform, &delta) {
-            if anim.pool[&anim.current].
+            // if anim.pool[&anim.current].
         };
     }
     cam_transform.translation = {

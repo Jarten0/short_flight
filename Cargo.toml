@@ -70,6 +70,7 @@ bevy = { version = "0.15.1", features = [
     "x11",
 ], default-features = false }
 bevy-inspector-egui = "0.29.1"
+bevy_asset_loader = { version = "0.22.0", features = ["3d"] }
 bevy_ecs_tilemap = "0.15.0"
 bevy_editor_cam = "0.5.0"
 bevy_picking = "0.15.1"

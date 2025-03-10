@@ -295,17 +295,13 @@ fn create_mesh_from_tile_data(
         texture_index,
     } = &mut mesh;
 
-    let (tile_pos, tile_texture, TileDepth(tile_depth), TileSlope(tile_slope)) =
+    let (tile_pos, tile_texture, tile_depth, TileSlope(tile_slope)) =
         tile_data_query.get(tile).ok()?;
 
     *translation = Vec3::new(tile_pos.x as f32, 0.0, tile_pos.y as f32);
 
-    let (vertex_data, index_data) = calculate_mesh_data(
-        *tile_depth as f32,
-        Vec3::from((*tile_slope, 0.)),
-        0.0,
-        [2; 4],
-    );
+    let (vertex_data, index_data) =
+        calculate_mesh_data(tile_depth.f32(), Vec3::from((*tile_slope, 0.)), 0.0, [2; 4]);
     *vertices = vertex_data.clone().into_iter().map(|(v, _, _)| v).collect();
     *texture_uvs = vertex_data
         .clone()
@@ -368,7 +364,7 @@ fn adjust_on_release(
     }
     picking.set(TilePickedMode::Idle);
     let (mut depth, transform) = transforms.get_mut(drag.entity()).unwrap();
-    **depth = transform.translation.y.ceil() as i64;
+    *depth = TileDepth::from(transform.translation.y.ceil());
     tile_change_writer.send(TileChanged { tile: drag.target });
 }
 
@@ -407,20 +403,28 @@ fn set_tile_slope(
     }
 }
 
+/// Saves the depth and slope data for every tile in a tilemap.
+///
+/// Depth and slope values that are equal to their defaults are ommitted for the sake of clarity,
+/// since values not given are initialized to their defaults anyway.
 fn save_tile_data(
     _save: Trigger<GoSaveTheMesh>,
     tilemaps: Query<&TileStorage>,
     tiles: Query<(&TilePos, &TileDepth, &TileSlope)>,
 ) {
-    let mut depth_info: ldtk::TileDepthMapSerialization = HashMap::new();
-    let mut slope_info: ldtk::TileSlopeMapSerialization = HashMap::new();
+    let mut depth_info: HashMap<[u32; 2], TileDepth> = HashMap::new();
+    let mut slope_info: HashMap<[u32; 2], TileSlope> = HashMap::new();
     for tilemap in tilemaps.iter() {
         tilemap
             .iter()
             .filter_map(|item| item.map(|item| tiles.get(item).ok()).unwrap_or_default())
             .for_each(|(pos, depth, slope)| {
-                depth_info.insert([pos.x, pos.y], depth.0);
-                slope_info.insert([pos.x, pos.y], slope.0);
+                if (depth.f32() != 0.0) {
+                    depth_info.insert([pos.x, pos.y], depth.clone());
+                }
+                if (slope.0 != Vec2::ZERO) {
+                    slope_info.insert([pos.x, pos.y], slope.clone());
+                }
             });
     }
 
@@ -447,8 +451,6 @@ fn calculate_mesh_data(
     slope_i: f32,
     wall_counts: [u32; 4],
 ) -> (Vec<([f32; 3], [f32; 2], [f32; 3])>, Vec<u32>) {
-    let x_pos: f32 = 0.0;
-    let y_pos: f32 = 0.0;
     let mut vertices = vec![];
     let mut indices = vec![];
 
@@ -469,7 +471,7 @@ fn calculate_mesh_data(
 
     let corners = get_slope_corner_depths(slope.xy(), slope_i);
 
-    let top_vertices = top_vertices(x_pos, y_pos, corners);
+    let top_vertices = top_vertices(corners);
 
     for (side_index, side) in
         // [[0, 1], [1, 2], [2, 3], [3, 0]]
@@ -542,17 +544,13 @@ fn slope_wall_data(
 /// generates the vertex data for the top of the mesh, given:
 /// - the x and y position of the tile
 /// - the height of each corner of the top face
-fn top_vertices(
-    x_pos: f32,
-    y_pos: f32,
-    corners: [f32; 4],
-) -> (Vec<([f32; 3], [f32; 2], [f32; 3])>, Vec<u32>) {
+fn top_vertices(corners: [f32; 4]) -> (Vec<([f32; 3], [f32; 2], [f32; 3])>, Vec<u32>) {
     (
         vec![
-            ([x_pos + 1., corners[1], y_pos], [1., 0.], [0., 1., 0.]), // tr
-            ([x_pos, corners[0], y_pos], [0., 0.], [0., 1., 0.]),      // tl
-            ([x_pos, corners[3], y_pos + 1.], [0., 1.], [0., 1., 0.]), // bl
-            ([x_pos + 1., corners[2], y_pos + 1.], [1., 1.], [0., 1., 0.]), // br
+            ([1., corners[1], 0.], [1., 0.], [0., 1., 0.]), // tr
+            ([0., corners[0], 0.], [0., 0.], [0., 1., 0.]), // tl
+            ([0., corners[3], 1.], [0., 1.], [0., 1., 0.]), // bl
+            ([1., corners[2], 1.], [1., 1.], [0., 1., 0.]), // br
         ],
         vec![0, 1, 2, 2, 3, 0],
     )
