@@ -67,14 +67,13 @@ impl AnimType {
 
 #[derive(Debug, Default, Reflect, Clone, Serialize, Deserialize, Asset)]
 pub struct AnimationData {
-    #[serde(default)]
     #[serde(alias = "type")]
     pub variant: AnimType,
     #[serde(default)]
     #[serde(alias = "length")]
     pub time: f32,
-    #[serde(default)]
     #[serde(flatten)]
+    #[serde(default)]
     #[serde(alias = "can_move")]
     /// set a specific value for can_move for this animation
     pub can_move_override: Option<bool>,
@@ -91,16 +90,13 @@ impl AnimationData {
     // }
     /// returns true when the animation is over and should be switched to idle
     pub fn process_timer(&self, frame: &mut f32, delta: f32) -> bool {
-        if !self.variant.use_timer() {
-            return false;
-        }
-
         *frame += delta;
 
-        if *frame >= self.time {
+        if self.variant.use_timer() && *frame >= self.time {
             *frame = 0.0;
             return true;
         }
+
         return false;
     }
     /// returns true if this animation allows the player to move

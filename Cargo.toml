@@ -74,6 +74,7 @@ bevy_asset_loader = { version = "0.22.0", features = ["3d"] }
 bevy_ecs_tilemap = "0.15.0"
 bevy_editor_cam = "0.5.0"
 bevy_picking = "0.15.1"
+bevy_sprite3d = "4.0.0"
 image = "0.25.5"
 ldtk_rust = "0.6.0"
 log = "0.4.25"

@@ -1,6 +1,11 @@
+use anim_state::ShayminAnimation;
 use bevy::prelude::*;
 use bevy_ecs_tilemap::tiles::TileStorage;
+use bevy_sprite3d::prelude::*;
 use short_flight::animation;
+
+use crate::assets;
+use crate::assets::shaymin::SpritesCollection;
 
 mod anim_state;
 
@@ -8,15 +13,17 @@ pub struct ShayminPlugin;
 
 impl Plugin for ShayminPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(Startup, spawn_shaymin).add_systems(
-            Update,
-            (
-                control_shaymin,
-                process_shaymin_collisions,
-                anim_state::update_materials,
+        app.add_systems(Startup, spawn_shaymin)
+            .add_systems(
+                Update,
+                (
+                    control_shaymin,
+                    process_shaymin_collisions,
+                    anim_state::update_materials,
+                )
+                    .chain(),
             )
-                .chain(),
-        );
+            .add_plugins(Sprite3dPlugin);
     }
 }
 
@@ -27,26 +34,29 @@ pub struct Shaymin {}
 /// Init func for player code
 fn spawn_shaymin(
     mut commands: Commands,
-    mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<StandardMaterial>>,
-    mut asset_server: ResMut<AssetServer>,
+    asset_server: Res<AssetServer>,
+    collection: Res<assets::shaymin::SpritesCollection>,
+    sprite3d_params: Sprite3dParams,
 ) {
+    let mesh = asset_server.add(Cuboid::from_size(Vec3::ONE / 2.0).into());
+    let material = asset_server.add::<StandardMaterial>(Color::srgb(0.3, 0.6, 0.25).into());
     commands.spawn((
         Shaymin {},
-        anim_state::ShayminAnimation::new(&mut asset_server),
-        Mesh3d(meshes.add(Cuboid::from_size(Vec3::ONE / 2.0))),
-        MeshMaterial3d(materials.add(Color::srgb(0.3, 0.6, 0.25))),
+        anim_state::animation(&asset_server),
+        anim_state::sprite(&asset_server, collection, sprite3d_params),
+        Mesh3d(mesh),
+        MeshMaterial3d(material),
         Transform::from_xyz(10.0, 1.5, -2.0),
     ));
 }
 
 fn control_shaymin(
-    shaymin: Option<Single<(&mut Transform, &anim_state::ShayminAnimation), Without<Camera3d>>>,
+    shaymin: Option<Single<(&mut Transform, &mut ShayminAnimation), Without<Camera3d>>>,
     camera: Option<Single<&mut Transform, With<Camera3d>>>,
     kb: Res<ButtonInput<KeyCode>>,
     delta: Res<Time<Fixed>>,
 ) {
-    let (mut transform, anim) = shaymin.unwrap().into_inner();
+    let (mut transform, mut anim) = shaymin.unwrap().into_inner();
     let mut cam_transform = camera.unwrap().into_inner();
 
     // match animation.current_animation {
@@ -58,9 +68,15 @@ fn control_shaymin(
     //     animation::AnimType::Down => todo!(),
     // }
 
-    if anim.pool[&anim.current].can_move() {
+    let current = anim.current;
+    let data = anim.pool.get_mut(&current).unwrap();
+
+    if data.can_move() {
         if let Some(movement) = manage_movement(kb, &mut transform, &delta) {
-            // if anim.pool[&anim.current].
+            anim.direction = movement.xy();
+            if current == animation::Idle {
+                anim.current = animation::Walking;
+            }
         };
     }
     cam_transform.translation = {

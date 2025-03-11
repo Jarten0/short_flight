@@ -11,12 +11,14 @@ use short_flight::ldtk;
 use short_flight::ldtk::{LdtkMapBundle, LdtkPlugin, SpawnMeshEvent};
 use std::f32::consts::PI;
 
+mod assets;
 mod mesh;
 mod player;
 
 fn main() {
     App::new()
         .add_plugins(DefaultPlugins)
+        .add_plugins(assets::AssetsPlugin)
         .add_plugins(player::ShayminPlugin)
         .add_plugins(mesh::TileMeshManagerPlugin)
         .add_plugins(WorldInspectorPlugin::default())
