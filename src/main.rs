@@ -7,6 +7,7 @@ use bevy_ecs_tilemap::prelude::*;
 use bevy_editor_cam::prelude::*;
 use bevy_inspector_egui::quick::WorldInspectorPlugin;
 use bevy_picking::pointer::PointerInteraction;
+use bevy_sprite3d::Sprite3dPlugin;
 use short_flight::ldtk;
 use short_flight::ldtk::{LdtkMapBundle, LdtkPlugin, SpawnMeshEvent};
 use std::f32::consts::PI;
@@ -23,6 +24,7 @@ fn main() {
         .add_plugins(mesh::TileMeshManagerPlugin)
         .add_plugins(WorldInspectorPlugin::default())
         .add_plugins(TilemapPlugin)
+        .add_plugins(Sprite3dPlugin)
         .add_plugins(LdtkPlugin)
         .add_plugins(MeshPickingPlugin)
         .add_plugins(DefaultEditorCamPlugins)

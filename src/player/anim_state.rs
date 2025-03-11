@@ -1,9 +1,12 @@
-use crate::assets::shaymin::SpritesCollection;
+use std::collections::HashMap;
+
+use super::assets::ShayminAssets;
 use bevy::color::palettes;
 use bevy::prelude::*;
-use bevy::utils::hashbrown::HashMap;
 use bevy_sprite3d::prelude::*;
 use short_flight::animation::{AnimType, AnimationData};
+
+use super::assets::AnimationAsset;
 
 /// Handles the state managment of the player
 #[derive(Debug, Component)]
@@ -19,13 +22,6 @@ pub struct ShayminAnimation {
 }
 
 impl ShayminAnimation {
-    const EXPECT: &str = "Expected to find animation data at assets/animation/shaymin.ron";
-    const PATH: &str = "assets/animation/shaymin.ron";
-
-    pub fn animations() -> Option<HashMap<AnimType, AnimationData>> {
-        short_flight::deserialize_file(Self::PATH).ok()
-    }
-
     pub fn update(&mut self, delta: f32) {
         if self.pool[&self.current].process_timer(&mut self.frame, delta) {
             self.current = AnimType::Idle;
@@ -33,38 +29,54 @@ impl ShayminAnimation {
     }
 }
 
-pub fn animation(asset_server: &AssetServer) -> ShayminAnimation {
+pub fn animation(
+    asset_server: &AssetServer,
+    assets: &ShayminAssets,
+    anim_assets: Res<Assets<AnimationAsset>>,
+) -> ShayminAnimation {
     let materials = materials(asset_server);
-
+    let default = Default::default();
     ShayminAnimation {
         current: AnimType::Idle,
         frame: 0.0,
-        pool: ShayminAnimation::animations().expect(ShayminAnimation::EXPECT),
+        pool: anim_assets
+            .get(&assets.animations)
+            .unwrap_or(&default)
+            .0
+            .clone(),
+
         direction: Vec2::ZERO,
         materials,
     }
 }
 
-pub fn sprite(
-    asset_server: &AssetServer,
-    collection: Res<SpritesCollection>,
-    mut sprite3d_params: Sprite3dParams,
-) -> Sprite3dBundle {
-    let Some(get) = sprite3d_params.images.get(&collection.shaymin) else {
-        log::error!("Images are not loaded.");
-        panic!("Fix image loading issues");
-    };
+pub fn sprite(collection: &ShayminAssets, mut sprite3d_params: Sprite3dParams) -> Sprite3dBundle {
+    // let Some(get) = sprite3d_params.images.get(&collection.shaymin) else {
+    //     log::error!("Images are not loaded.");
+    //     panic!("Fix image loading issues");
+    // };
 
-    let (layout, sources, atlas) = TextureAtlasBuilder::default()
-        .add_texture(Some(collection.shaymin.id()), &get.clone())
-        .build()
-        .unwrap();
+    // let (mut layout, sources, atlas) = TextureAtlasBuilder::default()
+    //     .add_texture(Some(collection.shaymin.id()), &get.clone())
+    //     .build()
+    //     .unwrap();
 
-    let layout = asset_server.add(layout);
-    let atlas = asset_server.add(atlas);
+    // layout.add_texture(URect::from_corners(UVec2::new(0, 0), UVec2::new(32, 32)));
 
-    let sprite = Sprite3dBuilder::default()
-        .bundle_with_atlas(&mut sprite3d_params, TextureAtlas::from(layout));
+    // let layout = sprite3d_params.atlas_layouts.add(layout);
+    // let image = sprite3d_params.images.add(atlas);
+
+    let sprite = Sprite3dBuilder {
+        image: collection.shaymin.clone(),
+        pixels_per_metre: 32.0,
+        pivot: None,
+        alpha_mode: AlphaMode::Mask(0.5),
+        unlit: false,
+        double_sided: false,
+        emissive: LinearRgba::rgb(0.0, 0.02, 0.0),
+    }
+    .bundle(&mut sprite3d_params);
+    // .bundle_with_atlas(&mut sprite3d_params, TextureAtlas::from(layout));
     sprite
 }
 
@@ -92,11 +104,11 @@ pub fn update_materials(
     mut query: Query<(&mut ShayminAnimation, &mut MeshMaterial3d<StandardMaterial>)>,
     delta: Res<Time<Fixed>>,
 ) {
-    for (mut handler, mut material_handle) in &mut query {
-        handler.update(delta.delta_secs());
+    // for (mut handler, mut material_handle) in &mut query {
+    //     handler.update(delta.delta_secs());
 
-        if let Some(handle) = handler.materials.get(&handler.current) {
-            **material_handle = handle.clone();
-        };
-    }
+    //     if let Some(handle) = handler.materials.get(&handler.current) {
+    //         **material_handle = handle.clone();
+    //     };
+    // }
 }

@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use bevy::asset::Asset;
 use bevy::reflect::Reflect;
 use serde::{Deserialize, Serialize};

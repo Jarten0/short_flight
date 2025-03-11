@@ -1,43 +1,33 @@
-use bevy::asset::AssetLoader;
+use bevy::asset::saver::{AssetSaver, SavedAsset};
+use bevy::asset::{AssetLoader, AsyncWriteExt};
 use bevy::prelude::*;
 use bevy_asset_loader::prelude::*;
 use serde::Deserialize;
 use short_flight::animation::AnimationData;
 use std::marker::PhantomData;
 use thiserror::Error;
-pub mod shaymin;
 
 pub struct AssetsPlugin;
 
 impl Plugin for AssetsPlugin {
     fn build(&self, app: &mut App) {
         app.init_state::<AssetStates>()
-            .add_loading_state(
-                LoadingState::new(AssetStates::AssetLoading)
-                    .continue_to_state(AssetStates::Done)
-                    .load_collection::<shaymin::SpritesCollection>(),
-            )
-            .register_asset_loader::<RonAssetLoader<AnimationData>>(RonAssetLoader::default())
-            // .add_systems(OnEnter(AssetStates::Next), start_background_audio)
-           ;
+            // .add_loading_state(
+            //     LoadingState::new(AssetStates::First).continue_to_state(AssetStates::PlayerLoading), // .load_collection::<shaymin::SpritesCollection>(),
+            // )
+            .init_asset::<AnimationData>()
+            .register_asset_loader::<RonAssetLoader<AnimationData>>(RonAssetLoader::default());
     }
 }
 
 #[derive(Debug, States, PartialEq, Eq, Default, Hash, Clone)]
-enum AssetStates {
+pub enum AssetStates {
+    Retry,
     #[default]
-    AssetLoading,
+    // First,
+    PlayerLoading,
     Done,
 }
-
-// /// This system runs in MyStates::Next. Thus, AudioAssets is available as a resource
-// /// and the contained handle is done loading.
-// fn start_background_audio(mut commands: Commands, audio_assets: Res<AudioAssets>) {
-//     commands.spawn((
-//         AudioPlayer(audio_assets.background.clone()),
-//         PlaybackSettings::LOOP,
-//     ));
-// }
 
 #[derive(Debug, Default)]
 pub(crate) struct RonAssetLoader<T> {
@@ -48,8 +38,31 @@ pub(crate) struct RonAssetLoader<T> {
 pub(crate) enum RonAssetLoaderError {
     #[error("Could not load RON file: {0}")]
     Io(#[from] std::io::Error),
+    #[error("Could not serialize RON file: {0}")]
+    Serialize(#[from] ron::error::Error),
     #[error("Could not deserialize RON file: {0}")]
     Deserialize(#[from] ron::error::SpannedError),
+}
+
+impl<T> AssetSaver for RonAssetLoader<T>
+where
+    T: bevy::prelude::Asset + for<'a> serde::Deserialize<'a> + serde::Serialize,
+{
+    type Asset = T;
+    type Settings = ();
+    type OutputLoader = Self;
+    type Error = RonAssetLoaderError;
+
+    async fn save(
+        &self,
+        writer: &mut bevy::asset::io::Writer,
+        asset: SavedAsset<'_, Self::Asset>,
+        _settings: &Self::Settings,
+    ) -> Result<(), RonAssetLoaderError> {
+        let buf = ron::to_string(asset.get())?;
+        writer.write_all(buf.as_bytes()).await?;
+        Ok(())
+    }
 }
 
 impl<T> AssetLoader for RonAssetLoader<T>
