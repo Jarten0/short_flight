@@ -1,12 +1,15 @@
 use crate::ldtk::{self, SpawnMeshEvent, TileDepth};
 use bevy::asset::RenderAssetUsages;
 use bevy::color::palettes;
+use bevy::math::bounding::Aabb3d;
 use bevy::prelude::*;
 use bevy::render::mesh::Indices;
 use bevy::render::mesh::PrimitiveTopology;
+use bevy::render::primitives::Aabb;
+use bevy_ecs_tilemap::helpers::square_grid::neighbors::SquareDirection;
 use bevy_ecs_tilemap::prelude::*;
 use image::ImageBuffer;
-use short_flight::ldtk::TileSlope;
+use short_flight::ldtk::{TileRotate, TileSlope};
 use short_flight::serialize_to_file;
 use std::collections::HashMap;
 
@@ -76,6 +79,7 @@ impl Plugin for TileMeshManagerPlugin {
         app.add_systems(
             Update,
             (
+                adjust_tiles_via_keystrokes,
                 update_individual_tile_mesh,
                 spawn_massive_tilemap_mesh.after(ldtk::process_loaded_tile_maps),
                 (
@@ -104,7 +108,15 @@ fn spawn_massive_tilemap_mesh(
     asset_server: Res<AssetServer>,
     images: Res<Assets<Image>>,
     tilemaps: Query<(&TileStorage, &TilemapTexture)>,
-    tiles: Query<(&TilePos, Option<&TileTextureIndex>, &TileDepth, &TileSlope)>,
+    tiles: Query<(
+        &TilePos,
+        Option<&TileTextureIndex>,
+        &TileDepth,
+        &TileSlope,
+        &TilemapId,
+        &TileRotate,
+    )>,
+    tilemap_query: Query<(&TileStorage, &TilemapSize)>,
 ) {
     for event in events.read() {
         log::info!("Spawning new mesh [{:?}]", event);
@@ -115,7 +127,7 @@ fn spawn_massive_tilemap_mesh(
 
         let mut mesh_information = HashMap::new();
         for entity in tilemap_storage.iter().filter_map(|item| *item) {
-            let Some(mesh_info) = create_mesh_from_tile_data(entity, &tiles) else {
+            let Some(mesh_info) = create_mesh_from_tile_data(entity, &tiles, &tilemap_query) else {
                 log::error!("Could not query tile info for {}'s mesh data!", entity);
                 continue;
             };
@@ -165,8 +177,11 @@ fn spawn_massive_tilemap_mesh(
             .iter()
             .map(|image_handle| asset_server.add(StandardMaterial::from(image_handle.clone())))
             .collect();
-        let hovering: Handle<StandardMaterial> =
-            asset_server.add(StandardMaterial::from_color(palettes::basic::GREEN));
+        let hovering: Handle<StandardMaterial> = asset_server.add({
+            let mut material = StandardMaterial::from_color(palettes::basic::GREEN);
+            material.cull_mode = None;
+            material
+        });
         let selected: Handle<StandardMaterial> =
             asset_server.add(StandardMaterial::from_color(palettes::basic::LIME));
         let missing: Handle<StandardMaterial> =
@@ -204,6 +219,7 @@ fn spawn_massive_tilemap_mesh(
                 ))
                 .observe(move_on_drag)
                 .observe(adjust_on_release)
+                .observe(adjust_on_up)
                 .observe(set_tile_slope);
 
             mesh_bundle_inserts.insert(entity, bundle);
@@ -217,7 +233,15 @@ fn spawn_massive_tilemap_mesh(
 fn update_individual_tile_mesh(
     mut commands: Commands,
     mut changed_tiles: EventReader<TileChanged>,
-    tile_data_query: Query<(&TilePos, Option<&TileTextureIndex>, &TileDepth, &TileSlope)>,
+    tile_data_query: Query<(
+        &TilePos,
+        Option<&TileTextureIndex>,
+        &TileDepth,
+        &TileSlope,
+        &TilemapId,
+        &TileRotate,
+    )>,
+    tilemap_query: Query<(&TileStorage, &TilemapSize)>,
     asset_server: Res<AssetServer>,
     tilemap_mesh_data: Option<Res<TilemapMeshData>>,
 ) {
@@ -225,18 +249,25 @@ fn update_individual_tile_mesh(
         return;
     };
     for event in changed_tiles.read() {
-        let Some(mesh_info) = create_mesh_from_tile_data(event.tile, &tile_data_query) else {
+        let Some(mesh_info) =
+            create_mesh_from_tile_data(event.tile, &tile_data_query, &tilemap_query)
+        else {
             log::error!("Could not create updated mesh from current tile data! (Wrong entity being queried?)");
             continue;
         };
 
-        commands
-            .entity(event.tile)
-            .insert(get_mesh_components_from_info(
-                &asset_server,
-                &tilemap_mesh_data,
-                mesh_info,
-            ));
+        let enclosing = Aabb::enclosing(
+            mesh_info
+                .vertices
+                .iter()
+                .map(|value| Vec3::from(*value))
+                .collect::<Vec<Vec3>>(),
+        )
+        .unwrap();
+        commands.entity(event.tile).insert((
+            get_mesh_components_from_info(&asset_server, &tilemap_mesh_data, mesh_info),
+            enclosing,
+        ));
     }
 }
 
@@ -283,7 +314,15 @@ fn get_mesh_components_from_info(
 
 fn create_mesh_from_tile_data(
     tile: Entity,
-    tile_data_query: &Query<(&TilePos, Option<&TileTextureIndex>, &TileDepth, &TileSlope)>,
+    tile_data_query: &Query<(
+        &TilePos,
+        Option<&TileTextureIndex>,
+        &TileDepth,
+        &TileSlope,
+        &TilemapId,
+        &TileRotate,
+    )>,
+    tilemap_query: &Query<(&TileStorage, &TilemapSize)>,
 ) -> Option<MeshInfo> {
     let mut mesh: MeshInfo = Default::default();
     let MeshInfo {
@@ -295,13 +334,41 @@ fn create_mesh_from_tile_data(
         texture_index,
     } = &mut mesh;
 
-    let (tile_pos, tile_texture, tile_depth, TileSlope(tile_slope)) =
+    let (tile_pos, tile_texture, tile_depth, TileSlope(tile_slope), tilemap_id, tile_rotate) =
         tile_data_query.get(tile).ok()?;
 
     *translation = Vec3::new(tile_pos.x as f32, 0.0, tile_pos.y as f32);
 
-    let (vertex_data, index_data) =
-        calculate_mesh_data(tile_depth.f32(), Vec3::from((*tile_slope, 0.)), 0.0, [2; 4]);
+    let (tile_storage, map_size) = tilemap_query
+        .get(tilemap_id.0)
+        .expect("Expected tilemap id to be valid");
+    let wall_counts: [u32; 4] = [
+        SquareDirection::South,
+        SquareDirection::East,
+        SquareDirection::North,
+        SquareDirection::West,
+    ]
+    .map(|direction| tile_pos.square_offset(&direction, map_size))
+    .map(|value| value.map(|value| tile_storage.get(&value)).unwrap_or(None))
+    .map(|value| {
+        value
+            .map(|entity| tile_data_query.get(entity).ok())
+            .unwrap_or(None)
+    })
+    .map(|value| value.map(|value| tile_depth.f32() - value.2.f32()))
+    .map(|value| {
+        value
+            .map(|value| value.clamp(0., f32::INFINITY).ceil() as u32)
+            .unwrap_or(200)
+    });
+
+    let (vertex_data, index_data) = calculate_mesh_data(
+        tile_depth.f32(),
+        Vec3::from((*tile_slope, 0.)),
+        (tile_rotate.0 / 4) as f32,
+        wall_counts,
+        tile_rotate.0 % 4,
+    );
     *vertices = vertex_data.clone().into_iter().map(|(v, _, _)| v).collect();
     *texture_uvs = vertex_data
         .clone()
@@ -335,6 +402,7 @@ fn move_on_drag(
     mut transforms: Query<(&mut Transform)>,
     mut picking: ResMut<TilePickedMode>,
     kb: Res<ButtonInput<KeyCode>>,
+    mut gizmos: Gizmos,
 ) {
     if drag.button != PointerButton::Primary {
         return;
@@ -343,10 +411,19 @@ fn move_on_drag(
         return;
     }
     picking.set(TilePickedMode::Move { tile: drag.target });
-    if let TilePickedMode::Move { tile } = *picking {
-        let mut transform = transforms.get_mut(drag.entity()).unwrap();
-        transform.translation.y -= drag.delta.y * 0.01;
-    }
+    let mut transform = transforms.get_mut(drag.entity()).unwrap();
+    transform.translation.y -= drag.delta.y * 0.01;
+    gizmos.grid_3d(
+        // Isometry3d::IDENTITY,
+        Vec3::new(
+            transform.translation.x,
+            transform.translation.y.round(),
+            transform.translation.z,
+        ),
+        UVec3::new(40, 2, 40),
+        Vec3::ONE * 4.,
+        palettes::basic::RED,
+    );
 }
 
 fn adjust_on_release(
@@ -359,21 +436,32 @@ fn adjust_on_release(
     if drag.button != PointerButton::Primary {
         return;
     }
-    if kb.pressed(KeyCode::ShiftLeft) {
+    picking.set(TilePickedMode::Idle);
+    let (mut depth, transform) = transforms.get_mut(drag.entity()).unwrap();
+    *depth = TileDepth::from(depth.f32() + transform.translation.y.round());
+    tile_change_writer.send(TileChanged { tile: drag.target });
+}
+
+fn adjust_on_up(
+    drag: Trigger<Pointer<Up>>,
+    mut transforms: Query<(&mut TileDepth, &Transform)>,
+    mut tile_change_writer: EventWriter<TileChanged>,
+    mut picking: ResMut<TilePickedMode>,
+    kb: Res<ButtonInput<KeyCode>>,
+) {
+    if drag.button != PointerButton::Primary {
         return;
     }
     picking.set(TilePickedMode::Idle);
     let (mut depth, transform) = transforms.get_mut(drag.entity()).unwrap();
-    *depth = TileDepth::from(transform.translation.y.ceil());
+    *depth = TileDepth::from(depth.f32() + transform.translation.y.round());
     tile_change_writer.send(TileChanged { tile: drag.target });
 }
 
 fn set_tile_slope(
-    drag: Trigger<Pointer<bevy_picking::events::Drag>>,
-    mut slopes: Query<&mut TileSlope>,
-    mut tile_change_writer: EventWriter<TileChanged>,
-    kb: Res<ButtonInput<KeyCode>>,
+    drag: Trigger<Pointer<Down>>,
     mut picking: ResMut<TilePickedMode>,
+    kb: Res<ButtonInput<KeyCode>>,
 ) {
     if drag.button != PointerButton::Primary {
         return;
@@ -381,25 +469,59 @@ fn set_tile_slope(
     if !kb.pressed(KeyCode::ShiftLeft) {
         return;
     }
-    let TilePickedMode::Drag { tile } = *picking else {
-        return;
+
+    match *picking {
+        TilePickedMode::Idle => {
+            *picking = TilePickedMode::Drag { tile: drag.target };
+        }
+        TilePickedMode::Move { tile } => {
+            return;
+        }
+        TilePickedMode::Drag { tile } => (),
     };
-    let mut slope = slopes.get_mut(drag.entity()).unwrap();
+}
+
+fn adjust_tiles_via_keystrokes(
+    mut tile_data: Query<(&mut TileSlope, &mut TileRotate)>,
+    mut tile_change_writer: EventWriter<TileChanged>,
+    kb: Res<ButtonInput<KeyCode>>,
+    picking: ResMut<TilePickedMode>,
+) {
+    let tile = match *picking {
+        TilePickedMode::Idle => {
+            return;
+        }
+        TilePickedMode::Move { tile } => {
+            return;
+        }
+        TilePickedMode::Drag { tile } => tile,
+    };
+
+    let (mut slope, mut rotate_mode) = tile_data.get_mut(tile).unwrap();
     if kb.just_pressed(KeyCode::KeyA) {
         slope.0.x -= 1.0;
         tile_change_writer.send(TileChanged { tile });
-    }
-    if kb.just_pressed(KeyCode::KeyD) {
+        log::info!("Changed slope -x");
+    } else if kb.just_pressed(KeyCode::KeyD) {
         slope.0.x += 1.0;
         tile_change_writer.send(TileChanged { tile });
-    }
-    if kb.just_pressed(KeyCode::KeyW) {
+        log::info!("Changed slope +x");
+    } else if kb.just_pressed(KeyCode::KeyW) {
         slope.0.y += 1.0;
         tile_change_writer.send(TileChanged { tile });
-    }
-    if kb.just_pressed(KeyCode::KeyS) {
+        log::info!("Changed slope +y");
+    } else if kb.just_pressed(KeyCode::KeyS) {
         slope.0.y -= 1.0;
         tile_change_writer.send(TileChanged { tile });
+        log::info!("Changed slope -y");
+    } else if kb.just_pressed(KeyCode::KeyE) {
+        rotate_mode.0 += 1;
+        tile_change_writer.send(TileChanged { tile });
+        log::info!("Changed rotation +r");
+    } else if kb.just_pressed(KeyCode::KeyQ) {
+        rotate_mode.0 -= 1;
+        tile_change_writer.send(TileChanged { tile });
+        log::info!("Changed rotation -r");
     }
 }
 
@@ -450,6 +572,7 @@ fn calculate_mesh_data(
     slope: Vec3,
     slope_i: f32,
     wall_counts: [u32; 4],
+    rotate_mode: u32,
 ) -> (Vec<([f32; 3], [f32; 2], [f32; 3])>, Vec<u32>) {
     let mut vertices = vec![];
     let mut indices = vec![];
@@ -469,9 +592,9 @@ fn calculate_mesh_data(
         indices.append(&mut offset_indices(data.1));
     };
 
-    let corners = get_slope_corner_depths(slope.xy(), slope_i);
+    let corners = get_slope_corner_depths(slope, slope_i);
 
-    let top_vertices = top_vertices(corners);
+    let top_vertices = top_vertices(corners, rotate_mode);
 
     for (side_index, side) in
         // [[0, 1], [1, 2], [2, 3], [3, 0]]
@@ -544,16 +667,21 @@ fn slope_wall_data(
 /// generates the vertex data for the top of the mesh, given:
 /// - the x and y position of the tile
 /// - the height of each corner of the top face
-fn top_vertices(corners: [f32; 4]) -> (Vec<([f32; 3], [f32; 2], [f32; 3])>, Vec<u32>) {
-    (
-        vec![
-            ([1., corners[1], 0.], [1., 0.], [0., 1., 0.]), // tr
-            ([0., corners[0], 0.], [0., 0.], [0., 1., 0.]), // tl
-            ([0., corners[3], 1.], [0., 1.], [0., 1., 0.]), // bl
-            ([1., corners[2], 1.], [1., 1.], [0., 1., 0.]), // br
-        ],
-        vec![0, 1, 2, 2, 3, 0],
-    )
+fn top_vertices(
+    corners: [f32; 4],
+    rotate_mode: u32,
+) -> (Vec<([f32; 3], [f32; 2], [f32; 3])>, Vec<u32>) {
+    let mut vertices = vec![
+        ([1., corners[1], 0.], [1., 0.], [0., 1., 0.]), // tr
+        ([0., corners[0], 0.], [0., 0.], [0., 1., 0.]), // tl
+        ([0., corners[3], 1.], [0., 1.], [0., 1., 0.]), // bl
+        ([1., corners[2], 1.], [1., 1.], [0., 1., 0.]), // br
+    ];
+    for r in 0..rotate_mode {
+        let end = vertices.pop().unwrap();
+        vertices.insert(0, end);
+    }
+    (vertices, vec![0, 1, 2, 2, 3, 0])
 }
 
 /// generates the vertex data for a wall, given:
@@ -613,12 +741,49 @@ fn wall_vertices(
 /// This was written with `i` in mind being only within a range of 0.0-1.0,
 /// and usually at only either end of the range,
 /// but does not assert as much incase a unique `i` value proves to be useful.
-fn get_slope_corner_depths(s: Vec2, i: f32) -> [f32; 4] {
-    let c = |value: f32| f32::clamp(value, 0., f32::INFINITY);
-    let cn = |value: f32| f32::clamp(value, f32::NEG_INFINITY, 0.);
-    let tr = c(s.x) + cn(s.x) * i + c(s.y) + cn(s.y) * i;
-    let bl = cn(s.x) + c(s.x) * i + cn(s.y) + c(s.y) * i;
-    let br = c(s.x) + cn(s.x) * i + cn(s.y) + c(s.y) * i;
-    let tl = cn(s.x) + c(s.x) * i + c(s.y) + cn(s.y) * i;
-    [tl, tr, br, bl]
+fn get_slope_corner_depths(s: Vec3, i: f32) -> [f32; 4] {
+    let pos: Box<dyn Fn(f32) -> f32> = Box::new(|value: f32| f32::clamp(value, 0., f32::INFINITY));
+    let neg: Box<dyn Fn(f32) -> f32> =
+        Box::new(|value: f32| -f32::clamp(value, f32::NEG_INFINITY, 0.));
+
+    let points = [s.z; 4];
+    let mapping = [
+        (&neg, &pos), // tl
+        (&pos, &pos), // tr
+        (&pos, &neg), // br
+        (&neg, &neg), // bl
+    ];
+
+    let select_corner =
+        |(point, map): (f32, (&Box<dyn Fn(f32) -> f32>, &Box<dyn Fn(f32) -> f32>))| {
+            let x_component = map.0(s.x);
+            let y_component = map.1(s.y);
+
+            let mut total = 0.;
+
+            if x_component == 0. {
+                total += y_component * i
+            } else if y_component == 0. {
+                total += x_component * i
+            } else {
+                total += (x_component + y_component) / 2.
+            }
+
+            point + total.clamp(0., f32::INFINITY)
+        };
+
+    let mut a = points.into_iter().zip(mapping).map(select_corner);
+
+    [
+        a.next().unwrap(), // tl
+        a.next().unwrap(), // tr
+        a.next().unwrap(), // br
+        a.next().unwrap(), // bl
+    ]
+
+    // let tr = pos(s.x) + (neg(s.x) * i) + pos(s.y) + (neg(s.y) * i);
+    // let bl = neg(s.x) + (pos(s.x) * i) + neg(s.y) + (pos(s.y) * i);
+    // let br = pos(s.x) + (neg(s.x) * i) + neg(s.y) + (pos(s.y) * i);
+    // let tl = neg(s.x) + (pos(s.x) * i) + pos(s.y) + (neg(s.y) * i);
+    // [tl, tr, br, bl]
 }

@@ -57,6 +57,10 @@ impl From<i64> for TileDepth {
 #[serde(transparent)]
 pub struct TileSlope(pub Vec2);
 
+#[derive(Debug, Reflect, Component, Default, Clone, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct TileRotate(pub u32);
+
 #[derive(Default)]
 pub struct LdtkPlugin;
 
@@ -309,6 +313,7 @@ fn spawn_map_components(commands: &mut Commands, ldtk_map: &LdtkMap, map_config:
                 },
                 tile_depth,
                 tile_slope,
+                TileRotate(0),
                 Name::new(format!("Tile {}-{}", layer_id, index)),
             );
 

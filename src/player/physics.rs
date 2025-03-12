@@ -81,7 +81,7 @@ pub fn manage_movement(
 
         dir
     };
-    let movement = input / 1.5 * delta.delta_secs();
+    let movement = input * 1.5 * delta.delta_secs();
     transform.translation += movement;
     return Some(movement);
 }
