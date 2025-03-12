@@ -78,6 +78,7 @@ bevy_ecs_tilemap = "0.15.0"
 bevy_editor_cam = "0.5.0"
 bevy_picking = "0.15.1"
 bevy_sprite3d = "4.0.0"
+bitflags = { version = "2.9.0", features = ["serde"] }
 image = "0.25.5"
 ldtk_rust = "0.6.0"
 log = "0.4.25"

@@ -1,4 +1,5 @@
 use bevy::prelude::*;
+use bitflags::bitflags;
 
 pub struct CollisionPlugin;
 
@@ -48,6 +49,27 @@ pub struct StaticCollision {}
 pub struct Collider {
     pub dynamic: bool,
     pub shape: ColliderShape,
+    pub layers: CollisionLayers,
+    pub can_interact: CollisionLayers,
+}
+
+#[derive(Debug, Clone, Reflect)]
+pub struct CollisionLayers(u32);
+
+bitflags! {
+    impl CollisionLayers: u32 {
+        const None = 0b00000000;
+        const Default = 0b00000001;
+        const Wall = 0b00000010;
+        const NPC = 0b00000100;
+        const Projectile = 0b00001000;
+    }
+}
+
+impl Default for CollisionLayers {
+    fn default() -> Self {
+        Self::Default
+    }
 }
 
 /// The different ways a shape can be represented - and *calculated* - for collision checks.
@@ -60,6 +82,8 @@ pub struct Collider {
 ///
 /// Every added variant to Collider shape will need to have interoperability with all of the other types,
 /// so being conservative with new additions where possible is ideal.
+///
+/// It's also ideal if this is not directly accessed by user code, for that reason.
 #[derive(Debug, Reflect)]
 pub enum ColliderShape {
     /// A rectangle, second easiest to calculate collisions with. Useful for bounding boxes.
@@ -100,6 +124,9 @@ fn query_overlaps(
             ColliderShape::Rect(col_rect) => {
                 let rect = offset_rect(col_rect, transform);
                 for (entity2, transform2, col, z_hitbox2, (dyn_info2, stat_info2)) in &all_objects {
+                    if !dyn_col.can_interact.intersects(col.layers.clone()) {
+                        continue;
+                    }
                     if !z_intersecting((z_hitbox, transform), (z_hitbox2, transform2)) {
                         continue;
                     }

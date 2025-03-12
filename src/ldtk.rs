@@ -1,3 +1,4 @@
+use crate::collision::{Collider, ColliderShape, CollisionLayers};
 use crate::deserialize_file;
 use bevy::prelude::Asset;
 use bevy::{asset::io::Reader, reflect::TypePath};
@@ -6,11 +7,13 @@ use bevy::{
     prelude::*,
 };
 use bevy_ecs_tilemap::map::TilemapType;
+use bevy_ecs_tilemap::tiles::TileFlip;
 use bevy_ecs_tilemap::{
     map::{TilemapId, TilemapSize, TilemapTexture, TilemapTileSize},
     tiles::{TileBundle, TilePos, TileStorage, TileTextureIndex},
     TilemapBundle,
 };
+use bitflags::bitflags;
 use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, io::ErrorKind};
 use thiserror::Error;
@@ -57,9 +60,25 @@ impl From<i64> for TileDepth {
 #[serde(transparent)]
 pub struct TileSlope(pub Vec2);
 
+/// Bitflags for how the tile should be visibly changed
+///
+/// Rotation bitflags are assumed to be clockwise
 #[derive(Debug, Reflect, Component, Default, Clone, Serialize, Deserialize)]
 #[serde(transparent)]
-pub struct TileRotate(pub u32);
+pub struct TileRotate(u32);
+
+bitflags! {
+    impl TileRotate: u32 {
+        const FlipX = 0b1;
+        const FlipY = 0b1 << 1;
+        const RotateClockwise = 0b1 << 2;
+        const RotateCounterClockwise = 0b1 << 3;
+        const FlipTriangles = 0b1 << 4;
+        const Inclusive = 0b1 << 5;
+        const Fold = 0b1 << 6;
+        // const  = 0b1 << 7;
+    }
+}
 
 #[derive(Default)]
 pub struct LdtkPlugin;
@@ -305,15 +324,21 @@ fn spawn_map_components(commands: &mut Commands, ldtk_map: &LdtkMap, map_config:
                 .unwrap_or_default();
 
             let bundle = (
-                TileBundle {
-                    position,
-                    tilemap_id: TilemapId(map_entity),
-                    texture_index: TileTextureIndex(tile.t as u32),
-                    ..default()
-                },
+                position,
+                TilemapId(map_entity),
+                TileTextureIndex(tile.t as u32),
                 tile_depth,
                 tile_slope,
-                TileRotate(0),
+                TileRotate::default() | TileRotate::from_bits(tile.f as u32).unwrap_or_default(),
+                Collider {
+                    dynamic: false,
+                    shape: ColliderShape::Rect(Rect {
+                        min: Vec2 { x: 0., y: 0. },
+                        max: Vec2 { x: 1., y: 1. },
+                    }),
+                    layers: CollisionLayers::Wall,
+                    can_interact: CollisionLayers::all(),
+                },
                 Name::new(format!("Tile {}-{}", layer_id, index)),
             );
 

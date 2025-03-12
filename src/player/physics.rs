@@ -1,22 +1,35 @@
 use super::anim_state::ShayminAnimation;
 use super::{Client, ClientQuery};
 use bevy::prelude::*;
+use bevy_ecs_tilemap::tiles::TilePos;
 use short_flight::animation;
-use short_flight::collision::{Collider, ColliderShape, CollisionEvent, DynamicCollision, ZHitbox};
+use short_flight::collision::{
+    Collider, ColliderShape, CollisionEvent, CollisionLayers, DynamicCollision, ZHitbox,
+};
+use short_flight::ldtk::{TileDepth, TileRotate, TileSlope};
 
 #[derive(Debug, Component)]
 #[require(DynamicCollision)]
-pub struct ShayminRigidbody {}
+pub struct ShayminRigidbody {
+    previous_position: Vec3,
+}
 
 pub fn setup(shaymin: Client, mut commands: Commands) {
     commands.entity(*shaymin).insert((
         Collider {
             dynamic: true,
             shape: ColliderShape::Circle { radius: 32. / 20. },
+            layers: CollisionLayers::NPC,
+            can_interact: CollisionLayers::NPC
+                | CollisionLayers::Projectile
+                | CollisionLayers::Wall,
         },
         ZHitbox {
             y_tolerance: 0.5,
             neg_y_tolerance: 0.0,
+        },
+        ShayminRigidbody {
+            previous_position: Vec3::ZERO,
         },
     ));
 }
@@ -86,17 +99,34 @@ pub fn manage_movement(
     return Some(movement);
 }
 
-pub fn update_rigidbodies() {}
+pub fn update_rigidbodies(mut rigidbodies: Query<(&mut ShayminRigidbody, &Transform)>) {
+    for (mut rigidbody, transform) in &mut rigidbodies {
+        if rigidbody.previous_position != transform.translation {
+            rigidbody.previous_position = transform.translation;
+        }
+    }
+}
 pub fn on_collision(
     trigger: Trigger<CollisionEvent>,
     mut rigidbody: Query<(&ShayminRigidbody, &mut Transform)>,
-    other_col: Query<&Collider>,
+    other_col: Query<(
+        &Collider,
+        AnyOf<(
+            (&TilePos, &TileDepth, &TileSlope, &TileRotate),
+            &ShayminRigidbody,
+        )>,
+    )>,
 ) {
     let (rigidbody, transform) = rigidbody.get_mut(trigger.this).unwrap();
-    let collider = other_col.get(trigger.other).unwrap();
+    let (collider, (tile_data, _)) = other_col.get(trigger.other).unwrap();
+
+    if let Some((tile_pos, tile_depth, tile_slope, tile_rotate)) = tile_data {
+        if let ColliderShape::Rect(rect) = &collider.shape {}
+        transform.translation.y = transform.translation.clamp(min, max)
+    }
 
     match &collider.shape {
-        ColliderShape::Rect(rect) => todo!(),
+        ColliderShape::Rect(rect) => {}
         ColliderShape::Circle { radius } => todo!(),
         ColliderShape::Mesh(handle) => todo!(),
     }

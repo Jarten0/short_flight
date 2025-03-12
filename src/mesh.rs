@@ -669,19 +669,58 @@ fn slope_wall_data(
 /// - the height of each corner of the top face
 fn top_vertices(
     corners: [f32; 4],
-    rotate_mode: u32,
+    rotate_mode: TileRotate,
 ) -> (Vec<([f32; 3], [f32; 2], [f32; 3])>, Vec<u32>) {
     let mut vertices = vec![
-        ([1., corners[1], 0.], [1., 0.], [0., 1., 0.]), // tr
-        ([0., corners[0], 0.], [0., 0.], [0., 1., 0.]), // tl
-        ([0., corners[3], 1.], [0., 1.], [0., 1., 0.]), // bl
-        ([1., corners[2], 1.], [1., 1.], [0., 1., 0.]), // br
+        ([1., corners[1], 0.]), // tr
+        ([0., corners[0], 0.]), // tl
+        ([0., corners[3], 1.]), // bl
+        ([1., corners[2], 1.]), // br
     ];
-    for r in 0..rotate_mode {
-        let end = vertices.pop().unwrap();
-        vertices.insert(0, end);
+    let mut uvs = vec![[1., 0.], [0., 0.], [0., 1.], [1., 1.]];
+    let mut normals = vec![[0., 1., 0.], [0., 1., 0.], [0., 1., 0.], [0., 1., 0.]];
+    let mut indices = vec![0, 1, 2, 2, 3, 0];
+
+    //(1,0)
+    //(2,3)
+    if rotate_mode.intersects(TileRotate::FlipX) {
+        uvs.swap(1, 0);
+        uvs.swap(2, 3);
     }
-    (vertices, vec![0, 1, 2, 2, 3, 0])
+    if rotate_mode.intersects(TileRotate::FlipY) {
+        uvs.swap(1, 2);
+        uvs.swap(0, 3);
+    }
+    if rotate_mode.intersects(TileRotate::FlipY) {
+        uvs.swap(1, 2);
+        uvs.swap(0, 3);
+    }
+    if rotate_mode.intersects(TileRotate::FlipTriangles) {
+        // 012,230 -> 123,301
+        indices = vec![1, 2, 3, 3, 0, 1];
+    }
+    if rotate_mode.intersects(TileRotate::Fold) {
+        vertices.append(&mut vec![
+            vertices[0].clone(), // tr2
+            vertices[2].clone(), // bl2
+        ]);
+        uvs.append(&mut vec![
+            uvs[0].clone(), // tr2
+            uvs[2].clone(), // bl2
+        ]);
+        normals.append(&mut vec![
+            normals[0].clone(), // tr2
+            normals[2].clone(), // bl2
+        ]);
+
+        indices = vec![0, 1, 2, 5, 3, 4];
+    }
+
+    let vertices = (0..vertices.len())
+        .map(|i| (vertices[i], uvs[i], normals[i]))
+        .collect();
+
+    (vertices, indices)
 }
 
 /// generates the vertex data for a wall, given:
