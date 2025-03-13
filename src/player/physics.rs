@@ -6,7 +6,7 @@ use short_flight::animation;
 use short_flight::collision::{
     Collider, ColliderShape, CollisionEvent, CollisionLayers, DynamicCollision, ZHitbox,
 };
-use short_flight::ldtk::{TileDepth, TileRotate, TileSlope};
+use short_flight::ldtk::{TileDepth, TileFlags, TileSlope};
 
 #[derive(Debug, Component)]
 #[require(DynamicCollision)]
@@ -112,7 +112,7 @@ pub fn on_collision(
     other_col: Query<(
         &Collider,
         AnyOf<(
-            (&TilePos, &TileDepth, &TileSlope, &TileRotate),
+            (&TilePos, &TileDepth, &TileSlope, &TileFlags),
             &ShayminRigidbody,
         )>,
     )>,
@@ -122,7 +122,7 @@ pub fn on_collision(
 
     if let Some((tile_pos, tile_depth, tile_slope, tile_rotate)) = tile_data {
         if let ColliderShape::Rect(rect) = &collider.shape {}
-        transform.translation.y = transform.translation.clamp(min, max)
+        // transform.translation.y = transform.translation.y.clamp(min, max);
     }
 
     match &collider.shape {

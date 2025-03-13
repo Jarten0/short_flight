@@ -63,20 +63,31 @@ pub struct TileSlope(pub Vec2);
 /// Bitflags for how the tile should be visibly changed
 ///
 /// Rotation bitflags are assumed to be clockwise
-#[derive(Debug, Reflect, Component, Default, Clone, Serialize, Deserialize)]
+#[derive(Debug, Reflect, Component, Default, Clone, Copy, Serialize, Deserialize, PartialEq)]
 #[serde(transparent)]
-pub struct TileRotate(u32);
+pub struct TileFlags(u32);
 
 bitflags! {
-    impl TileRotate: u32 {
+    impl TileFlags: u32 {
         const FlipX = 0b1;
         const FlipY = 0b1 << 1;
         const RotateClockwise = 0b1 << 2;
         const RotateCounterClockwise = 0b1 << 3;
         const FlipTriangles = 0b1 << 4;
-        const Inclusive = 0b1 << 5;
+        const Exclusive = 0b1 << 5;
         const Fold = 0b1 << 6;
         // const  = 0b1 << 7;
+    }
+}
+
+impl std::fmt::Display for TileFlags {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let flags = self
+            .iter_names()
+            .filter(|value| value.1.intersects(*self))
+            .map(|value| value.0)
+            .fold("".to_string(), |a, b| a + b + ", ");
+        write!(f, "{}", flags)
     }
 }
 
@@ -250,9 +261,12 @@ fn spawn_map_components(commands: &mut Commands, ldtk_map: &LdtkMap, map_config:
         deserialize_file("assets/depth_maps/tile_depth_map.ron").unwrap_or_default();
     let mut tile_slope_map: HashMap<[u32; 2], TileSlope> =
         deserialize_file("assets/depth_maps/tile_slope_map.ron").unwrap_or_default();
+    let mut tile_flag_map: HashMap<[u32; 2], TileFlags> =
+        deserialize_file("assets/depth_maps/tile_flag_map.ron").unwrap_or_default();
 
     log::info!("Found tilemap depth data of {} tiles", tile_depth_map.len());
     log::info!("Found tilemap slope data of {} tiles", tile_slope_map.len());
+    log::info!("Found tilemap flag data of {} tiles", tile_flag_map.len());
 
     // Pull out tilesets and their definitions into a new hashmap
     let mut tilesets = HashMap::new();
@@ -323,13 +337,17 @@ fn spawn_map_components(commands: &mut Commands, ldtk_map: &LdtkMap, map_config:
                 .remove(&[position.x, position.y])
                 .unwrap_or_default();
 
+            let tile_flags = tile_flag_map.remove(&[position.x, position.y]).unwrap_or(
+                TileFlags::default() | TileFlags::from_bits(tile.f as u32).unwrap_or_default(),
+            );
+
             let bundle = (
                 position,
                 TilemapId(map_entity),
                 TileTextureIndex(tile.t as u32),
                 tile_depth,
                 tile_slope,
-                TileRotate::default() | TileRotate::from_bits(tile.f as u32).unwrap_or_default(),
+                tile_flags,
                 Collider {
                     dynamic: false,
                     shape: ColliderShape::Rect(Rect {
