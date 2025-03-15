@@ -70,13 +70,15 @@ pub fn sprite(collection: &ShayminAssets, mut sprite3d_params: Sprite3dParams) -
         image: collection.shaymin.clone(),
         pixels_per_metre: 32.0,
         pivot: None,
+        // pivot: Some(Vec2::new(0.5, 0.0)),
         alpha_mode: AlphaMode::Mask(0.5),
-        unlit: false,
+        unlit: true,
         double_sided: false,
         emissive: LinearRgba::rgb(0.0, 0.02, 0.0),
     }
     .bundle(&mut sprite3d_params);
     // .bundle_with_atlas(&mut sprite3d_params, TextureAtlas::from(layout));
+
     sprite
 }
 

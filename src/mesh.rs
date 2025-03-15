@@ -24,7 +24,22 @@ struct TilemapMeshData {
     hovering: Handle<StandardMaterial>,
     selected: Handle<StandardMaterial>,
     missing: Handle<StandardMaterial>,
+    mesh_cache: HashMap<MeshCacheKey, Handle<Mesh>>,
 }
+
+/// The state of a mesh that can be used to infer if an existing mesh can be reused.
+///
+/// List of properties efficient to cache with:
+/// - Depth
+/// - Slope
+/// - Bit flags
+/// - Texture
+///
+/// List of properties too inefficient to cache effectively. Meshes with any of these properties not set to their default values will not be cached.
+/// - Walls
+/// -
+#[derive(Debug, Hash)]
+struct MeshCacheKey {}
 
 #[derive(Default)]
 struct MeshInfo {
@@ -115,7 +130,7 @@ fn spawn_massive_tilemap_mesh(
     tilemaps: Query<(&TileStorage, &TilemapTexture)>,
     tiles: Query<(
         &TilePos,
-        Option<&TileTextureIndex>,
+        &TileTextureIndex,
         &TileDepth,
         &TileSlope,
         &TilemapId,
@@ -192,7 +207,7 @@ fn spawn_massive_tilemap_mesh(
         let missing: Handle<StandardMaterial> =
             asset_server.add(StandardMaterial::from_color(palettes::basic::PURPLE));
 
-        let tilemap_mesh_data = TilemapMeshData {
+        let mut tilemap_mesh_data = TilemapMeshData {
             texture: (*texture).clone(),
             textures,
             tile_size: [tile_width, tile_height],
@@ -200,6 +215,7 @@ fn spawn_massive_tilemap_mesh(
             hovering,
             selected,
             missing,
+            mesh_cache: HashMap::new(),
         };
 
         let tilemap_mesh_data_ref: &TilemapMeshData = &tilemap_mesh_data;
@@ -241,7 +257,7 @@ fn update_individual_tile_mesh(
     mut changed_tiles: EventReader<TileChanged>,
     tile_data_query: Query<(
         &TilePos,
-        Option<&TileTextureIndex>,
+        &TileTextureIndex,
         &TileDepth,
         &TileSlope,
         &TilemapId,
@@ -255,6 +271,12 @@ fn update_individual_tile_mesh(
         return;
     };
     for event in changed_tiles.read() {
+        let key = {
+            let key = MeshCacheKey {};
+
+            key
+        };
+
         let Some(mesh_info) =
             create_mesh_from_tile_data(event.tile, &tile_data_query, &tilemap_query)
         else {
@@ -322,7 +344,7 @@ fn create_mesh_from_tile_data(
     tile: Entity,
     tile_data_query: &Query<(
         &TilePos,
-        Option<&TileTextureIndex>,
+        &TileTextureIndex,
         &TileDepth,
         &TileSlope,
         &TilemapId,
@@ -374,6 +396,7 @@ fn create_mesh_from_tile_data(
         wall_counts,
         *tile_flags,
     );
+
     *vertices = vertex_data.clone().into_iter().map(|(v, _, _)| v).collect();
     *texture_uvs = vertex_data
         .clone()
@@ -383,7 +406,7 @@ fn create_mesh_from_tile_data(
     *normals = vertex_data.clone().into_iter().map(|(_, _, n)| n).collect();
     *indices = index_data;
 
-    tile_texture.map(|texture| texture_index.insert(texture.0 as usize));
+    *texture_index.insert(tile_texture.0 as usize);
 
     return Some(mesh);
 }
@@ -665,14 +688,11 @@ fn calculate_mesh_data(
         indices.append(&mut offset_indices(data.1));
     };
 
-    let corners = get_slope_corner_depths(slope, flags);
+    let corners = get_slope_corner_depths(slope, !flags.intersects(TileFlags::Exclusive));
 
     let top_vertices = top_vertices(corners, flags);
 
-    for (side_index, side) in
-        // [[0, 1], [1, 2], [2, 3], [3, 0]]
-        [[1, 0], [0, 3], [3, 2], [2, 1]].into_iter().enumerate()
-    {
+    for (side_index, side) in [[1, 0], [0, 3], [3, 2], [2, 1]].into_iter().enumerate() {
         let [v1, v2] = [top_vertices.0[side[0]].0, top_vertices.0[side[1]].0];
         insert(slope_wall_data(depth, v1, v2));
 
@@ -847,14 +867,10 @@ fn wall_vertices(
 /// For the given slope (`s`) value, returns the depth of the four corners of a tile
 /// that should become a slope.
 ///
-/// The `i` parameter determines how "inclusive" a slope should be,
+/// `inclusive` determines the shape a slope will take,
 /// notably determining whether corner slopes become extrusive or intrusive.
-///
-/// This was written with `i` in mind being only within a range of 0.0-1.0,
-/// and usually at only either end of the range,
-/// but does not assert as much incase a unique `i` value proves to be useful.
-fn get_slope_corner_depths(s: Vec3, flags: TileFlags) -> [f32; 4] {
-    let i = !flags.intersects(TileFlags::Exclusive) as i32 as f32;
+pub(crate) fn get_slope_corner_depths(s: Vec3, inclusive: bool) -> [f32; 4] {
+    let i = inclusive as i32 as f32;
     let pos: Box<dyn Fn(f32) -> f32> = Box::new(|value: f32| f32::clamp(value, 0., f32::INFINITY));
     let neg: Box<dyn Fn(f32) -> f32> =
         Box::new(|value: f32| -f32::clamp(value, f32::NEG_INFINITY, 0.));
@@ -893,10 +909,4 @@ fn get_slope_corner_depths(s: Vec3, flags: TileFlags) -> [f32; 4] {
         a.next().unwrap(), // br
         a.next().unwrap(), // bl
     ]
-
-    // let tr = pos(s.x) + (neg(s.x) * i) + pos(s.y) + (neg(s.y) * i);
-    // let bl = neg(s.x) + (pos(s.x) * i) + neg(s.y) + (pos(s.y) * i);
-    // let br = pos(s.x) + (neg(s.x) * i) + neg(s.y) + (pos(s.y) * i);
-    // let tl = neg(s.x) + (pos(s.x) * i) + pos(s.y) + (neg(s.y) * i);
-    // [tl, tr, br, bl]
 }

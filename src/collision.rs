@@ -1,3 +1,4 @@
+use bevy::color::palettes;
 use bevy::prelude::*;
 use bitflags::bitflags;
 
@@ -14,6 +15,10 @@ impl Plugin for CollisionPlugin {
                     bevy::transform::systems::sync_simple_transforms,
                 ),
                 query_overlaps, // this uses the latest GlobalTransform, but doesn't change any Transform's
+                (
+                    bevy::transform::systems::propagate_transforms,
+                    bevy::transform::systems::sync_simple_transforms,
+                ),
                 propogate_collision_events, // this will be changing Transform's after GlobalTransform is used
                                             // GlobalTransforms will be finally updated in PostUpdate
             )
@@ -34,6 +39,28 @@ pub struct ZHitbox {
     ///
     /// Should always be negative, unless trying to offset the ZHitbox from the Z transform
     pub neg_y_tolerance: f32,
+}
+
+impl ZHitbox {
+    #[inline]
+    pub fn height(&self) -> f32 {
+        self.y_tolerance + self.neg_y_tolerance
+    }
+
+    /// Returns `true` if the two ZHitboxes are intersecting, even if their transform x's and y's are distant.
+    pub fn intersecting(&self, other: &Self, self_y_offset: f32, other_y_offset: f32) -> bool {
+        let range = [
+            self.neg_y_tolerance + self_y_offset,
+            self.y_tolerance + self_y_offset,
+        ];
+        let range2 = [
+            other.neg_y_tolerance + other_y_offset,
+            other.y_tolerance + other_y_offset,
+        ];
+        let bottom_bound = (range[1] >= range2[0]) & (range2[1] >= range[0]);
+        let top_bound = (range[0] <= range2[1]) & (range2[0] <= range[1]);
+        bottom_bound & top_bound
+    }
 }
 
 /// Information for objects that move
@@ -118,6 +145,7 @@ fn query_overlaps(
         AnyOf<(&DynamicCollision, &StaticCollision)>,
     )>,
     mut collision_events: EventWriter<CollisionEvent>,
+    mut gizmos: Gizmos,
 ) {
     for (entity, transform, dyn_col, z_hitbox, dyn_info) in &dyn_objects {
         match &dyn_col.shape {
@@ -127,9 +155,7 @@ fn query_overlaps(
                     if !dyn_col.can_interact.intersects(col.layers.clone()) {
                         continue;
                     }
-                    if !z_intersecting((z_hitbox, transform), (z_hitbox2, transform2)) {
-                        continue;
-                    }
+
                     let result: bool = match &col.shape {
                         ColliderShape::Rect(col_rect) => {
                             let rect2 = offset_rect(col_rect, transform2);
@@ -138,13 +164,22 @@ fn query_overlaps(
                         ColliderShape::Circle { radius } => {
                             let p = transform2.translation().xz();
 
-                            let radius2 = bounded_magnitude_squared(rect, p);
+                            let radius2 = bounded_difference(rect, p).length_squared();
 
                             let distance_sq = rect.center().distance_squared(p);
+
                             radius.powi(2) + radius2 > distance_sq
                         }
                         ColliderShape::Mesh(handle) => unimplemented!(),
                     };
+
+                    if !z_hitbox.intersecting(
+                        z_hitbox2,
+                        transform.translation().y,
+                        transform2.translation().y,
+                    ) {
+                        continue;
+                    }
 
                     if result {
                         collision_events.send(CollisionEvent {
@@ -158,18 +193,45 @@ fn query_overlaps(
                 let p = transform.translation().xz();
 
                 for (entity2, transform2, col, z_hitbox2, (dyn_info2, stat_info2)) in &all_objects {
-                    if !z_intersecting((z_hitbox, transform), (z_hitbox2, transform2)) {
+                    if !z_hitbox.intersecting(
+                        z_hitbox2,
+                        transform.translation().y,
+                        transform2.translation().y,
+                    ) {
                         continue;
                     }
                     let result: bool = match &col.shape {
                         ColliderShape::Rect(col_rect) => {
                             let rect = offset_rect(col_rect, transform2);
 
-                            let radius2 = bounded_magnitude_squared(rect, p);
+                            let radius2 = bounded_difference(rect, p).length();
 
-                            let distance_sq = rect.center().distance_squared(p);
+                            let combined_radius = radius + radius2;
 
-                            radius.powi(2) + radius2 > distance_sq
+                            let distance = rect.center().distance(p);
+
+                            if combined_radius > distance - 0.5 {
+                                gizmos.circle(
+                                    Isometry3d::new(
+                                        Vec3::new(rect.center().x, 0.05, rect.center().y),
+                                        Quat::from_rotation_x(f32::to_radians(90.0)),
+                                    ),
+                                    radius2,
+                                    palettes::basic::RED,
+                                );
+                            }
+
+                            if combined_radius > distance {
+                                let end = Vec3::new(
+                                    rect.center().x,
+                                    1.0 + transform2.translation().y + z_hitbox2.y_tolerance,
+                                    rect.center().y,
+                                );
+                                gizmos.line(Vec3::new(p.x, 0.1, p.y), end, palettes::basic::LIME);
+                                true
+                            } else {
+                                false
+                            }
                         }
                         ColliderShape::Circle { radius: radius2 } => {
                             let p2 = transform2.translation().xz();
@@ -196,35 +258,21 @@ fn query_overlaps(
 /// the magnitude of a vector pointing from `rect`'s center, towards `p`,
 /// bounded by the `rect`, and squared for fast computing.
 /// effectively it just turns the `rect` into a circle with the radius of the closest possible tangential point.
-fn bounded_magnitude_squared(rect: Rect, p: Vec2) -> f32 {
+fn bounded_difference(rect: Rect, p: Vec2) -> Vec2 {
     let difference = p - rect.center();
-    let bounded = Vec2::new(
-        difference.x.clamp(rect.min.x, rect.max.x),
-        difference.y.clamp(rect.min.y, rect.max.y),
-    );
-    bounded.length_squared()
+    let min = rect.min - rect.center();
+    let max = rect.max - rect.center();
+    Vec2::new(
+        difference.x.clamp(min.x, max.x),
+        difference.y.clamp(min.y, max.y),
+    )
 }
 
 fn offset_rect(col_rect: &Rect, transform: &GlobalTransform) -> Rect {
     let mut rect = col_rect.clone();
-    rect.min += transform.translation().xy();
-    rect.max += transform.translation().xy();
+    rect.min += transform.translation().xz();
+    rect.max += transform.translation().xz();
     rect
-}
-
-// returns true if the two ZHitboxes are intersecting, even if their transform x's and y's are distant.
-fn z_intersecting(zhb: (&ZHitbox, &GlobalTransform), rhzhb: (&ZHitbox, &GlobalTransform)) -> bool {
-    let range = [
-        zhb.0.neg_y_tolerance + zhb.1.translation().y,
-        zhb.0.y_tolerance + zhb.1.translation().y,
-    ];
-    let range2 = [
-        rhzhb.0.neg_y_tolerance + rhzhb.1.translation().y,
-        rhzhb.0.y_tolerance + rhzhb.1.translation().y,
-    ];
-    let bottom_bound = (range[1] > range2[0]) | (range2[0] > range[1]);
-    let top_bound = (range[0] < range2[1]) | (range2[1] < range[0]);
-    bottom_bound & top_bound
 }
 
 fn propogate_collision_events(mut events: EventReader<CollisionEvent>, mut commands: Commands) {

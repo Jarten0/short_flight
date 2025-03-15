@@ -22,10 +22,12 @@ impl Plugin for ShayminPlugin {
         app.world_mut().spawn(Shaymin);
         app.add_systems(Startup, (setup, physics::setup))
             .add_systems(OnEnter(AssetStates::Done), insert_assets)
+            .add_systems(FixedFirst, physics::update_rigidbodies)
             .add_systems(
                 FixedUpdate,
                 (physics::control_shaymin, anim_state::update_materials).chain(),
             )
+            .add_systems(PostUpdate, (physics::draw_colliders).chain())
             .init_asset::<AnimationAsset>()
             .register_asset_loader::<RonAssetLoader<AnimationAsset>>(RonAssetLoader::default())
             .add_loading_state(
@@ -49,8 +51,7 @@ pub type ClientQuery<'a, T, F = ()> = Single<'a, T, (With<Shaymin>, F)>;
 fn setup(shaymin: Client, mut commands: Commands) {
     commands
         .entity(*shaymin)
-        .insert((Transform::from_xyz(10.0, 1.5, -2.0)
-            .with_rotation(Quat::from_rotation_x(f32::to_radians(-90.0))),));
+        .insert((Transform::from_xyz(10.0, 0.0, -2.0)));
 }
 
 /// Runs after all of the assets are loaded
@@ -62,10 +63,15 @@ fn insert_assets(
     anim_assets: Res<Assets<AnimationAsset>>,
     sprite3d_params: Sprite3dParams,
 ) {
-    commands.entity(*shaymin).insert((
-        anim_state::animation(&asset_server, &assets, anim_assets),
-        anim_state::sprite(&assets, sprite3d_params),
-    ));
+    commands
+        .entity(*shaymin)
+        .insert((anim_state::animation(&asset_server, &assets, anim_assets),))
+        .with_child((
+            Name::new("3D Sprite"),
+            anim_state::sprite(&assets, sprite3d_params),
+            Transform::from_xyz(0.0, 1.0, 0.0)
+                .with_rotation(Quat::from_rotation_x(f32::to_radians(-90.0))),
+        ));
     log::info!("Inserted shaymin assets");
 }
 

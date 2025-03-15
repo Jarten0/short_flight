@@ -3,13 +3,9 @@
 
 use bevy::color::palettes::tailwind::{PINK_100, RED_500};
 use bevy::prelude::*;
-use bevy_ecs_tilemap::prelude::*;
 use bevy_editor_cam::prelude::*;
-use bevy_inspector_egui::quick::WorldInspectorPlugin;
 use bevy_picking::pointer::PointerInteraction;
-use bevy_sprite3d::Sprite3dPlugin;
-use short_flight::ldtk;
-use short_flight::ldtk::{LdtkMapBundle, LdtkPlugin, SpawnMeshEvent};
+use short_flight::ldtk::{self, LdtkMapBundle, SpawnMeshEvent};
 use std::f32::consts::PI;
 
 mod assets;
@@ -18,19 +14,28 @@ mod player;
 
 fn main() {
     App::new()
+        // builtin
         .add_plugins(DefaultPlugins)
+        .add_plugins(MeshPickingPlugin)
+        // game
         .add_plugins(assets::AssetsPlugin)
         .add_plugins(player::ShayminPlugin)
+        // lib
+        .add_plugins(short_flight::collision::CollisionPlugin)
+        .add_plugins(short_flight::ldtk::LdtkPlugin)
         .add_plugins(mesh::TileMeshManagerPlugin)
-        .add_plugins(WorldInspectorPlugin::default())
-        .add_plugins(TilemapPlugin)
-        .add_plugins(Sprite3dPlugin)
-        .add_plugins(LdtkPlugin)
-        .add_plugins(MeshPickingPlugin)
-        .add_plugins(DefaultEditorCamPlugins)
+        // third party
+        .add_plugins(bevy_ecs_tilemap::TilemapPlugin)
+        .add_plugins(bevy_inspector_egui::quick::WorldInspectorPlugin::default())
+        .add_plugins(bevy_sprite3d::Sprite3dPlugin)
+        .add_plugins(bevy_editor_cam::DefaultEditorCamPlugins)
+        // core game
         .add_systems(PreStartup, setup)
         .add_systems(Update, deferred_mesh_spawn)
-        .add_systems(Update, (draw_mesh_intersections, pause_on_space))
+        .add_systems(
+            Update,
+            (draw_mesh_intersections, pause_on_space, toggle_projection),
+        )
         .add_event::<SpawnMeshEvent>()
         .run();
 }
@@ -55,8 +60,34 @@ fn setup(mut commands: Commands) {
             .looking_at(Vec3::NEG_Y, Vec3::Y)
             .with_rotation(Quat::from_rotation_x(f32::to_radians(-90.0)))
             .with_translation(Vec3::new(0.0, 20.0, 0.0)),
-        EditorCam::default().with_initial_anchor_depth(20.0),
+        // EditorCam::default().with_initial_anchor_depth(20.0),
     ));
+}
+
+fn toggle_projection(mut projection: Query<&mut Projection>, kb: Res<ButtonInput<KeyCode>>) {
+    if kb.just_pressed(KeyCode::KeyT) {
+        for mut proj in &mut projection {
+            *proj = match &*proj {
+                Projection::Perspective(_) => Projection::Orthographic(OrthographicProjection {
+                    scale: 1.0,
+                    near: 0.1,
+                    far: 1000.0,
+                    viewport_origin: Vec2::new(0.5, 0.5),
+                    scaling_mode: bevy::render::camera::ScalingMode::AutoMax {
+                        max_width: 16.,
+                        max_height: 9.,
+                    },
+                    area: Rect::new(-1.0, -1.0, 1.0, 1.0),
+                }),
+                Projection::Orthographic(_) => Projection::Perspective(PerspectiveProjection {
+                    fov: core::f32::consts::PI / 4.0,
+                    near: 0.1,
+                    far: 1000.0,
+                    aspect_ratio: 16.0 / 9.0,
+                }),
+            }
+        }
+    }
 }
 
 fn deferred_mesh_spawn(

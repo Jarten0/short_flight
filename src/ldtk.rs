@@ -1,4 +1,4 @@
-use crate::collision::{Collider, ColliderShape, CollisionLayers};
+use crate::collision::{Collider, ColliderShape, CollisionLayers, StaticCollision, ZHitbox};
 use crate::deserialize_file;
 use bevy::prelude::Asset;
 use bevy::{asset::io::Reader, reflect::TypePath};
@@ -329,25 +329,21 @@ fn spawn_map_components(commands: &mut Commands, ldtk_map: &LdtkMap, map_config:
                 y: ((tile.px[1]) / default_grid_size) as u32,
             };
 
-            let tile_depth = tile_depth_map
-                .remove(&[position.x, position.y])
-                .unwrap_or_default();
+            let key = [position.x, position.y];
 
-            let tile_slope = tile_slope_map
-                .remove(&[position.x, position.y])
-                .unwrap_or_default();
+            let tile_depth = tile_depth_map.remove(&key).unwrap_or_default();
 
-            let tile_flags = tile_flag_map.remove(&[position.x, position.y]).unwrap_or(
+            let tile_slope = tile_slope_map.remove(&key).unwrap_or_default();
+
+            let tile_flags = tile_flag_map.remove(&key).unwrap_or(
                 TileFlags::default() | TileFlags::from_bits(tile.f as u32).unwrap_or_default(),
             );
 
             let bundle = (
+                Name::new(format!("Tile {}-{:?}", layer_id, position)),
                 position,
                 TilemapId(map_entity),
                 TileTextureIndex(tile.t as u32),
-                tile_depth,
-                tile_slope,
-                tile_flags,
                 Collider {
                     dynamic: false,
                     shape: ColliderShape::Rect(Rect {
@@ -357,7 +353,14 @@ fn spawn_map_components(commands: &mut Commands, ldtk_map: &LdtkMap, map_config:
                     layers: CollisionLayers::Wall,
                     can_interact: CollisionLayers::all(),
                 },
-                Name::new(format!("Tile {}-{}", layer_id, index)),
+                ZHitbox {
+                    y_tolerance: tile_depth.f32(),
+                    neg_y_tolerance: f32::NEG_INFINITY,
+                },
+                StaticCollision {},
+                tile_depth,
+                tile_slope,
+                tile_flags,
             );
 
             let tile_entity = commands.spawn(bundle).id();
