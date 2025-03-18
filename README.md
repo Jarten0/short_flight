@@ -1,16 +1,16 @@
-# To run
-Clone this repository, 
-- via Github Desktop, with the URL 'https://github.com/Jarten0/short_flight'
-- via the gh CLI tool, with the command ```gh repo clone Jarten0/short_flight```
-- via cloning with git, with the command ```git clone https://github.com/Jarten0/short_flight```
+# To Run
+Clone this repository with any of the listed methods, or in whichever alternative way you wish 
+- via [Github Desktop](https://desktop.github.com/download/), with the URL 'https://github.com/Jarten0/short_flight' (See [here](https://docs.github.com/en/desktop/adding-and-cloning-repositories/cloning-and-forking-repositories-from-github-desktop#cloning-a-repository))
+- via the [gh CLI tool](https://github.com/cli/cli?tab=readme-ov-file#installation), with the command ```gh repo clone Jarten0/short_flight```
+- via cloning with [git](https://git-scm.com/downloads), with the command ```git clone https://github.com/Jarten0/short_flight```
 
-Then download a build of the game. As of writing it is distributed via github releases, but in the future it might be by some other way.
+Then download a build of the game. As of writing it is distributed via [Github Releases](https://github.com/Jarten0/short_flight/releases), but in the future it might be by some other way.
 Insert it into the top level of the repository, alongside the `assets` folder.
 
-The build will likely be outdated by some amount, so follow the steps below to build the game yourself to try out the most recent additions. 
+The build will likely be outdated by some amount, so follow the steps below in [To Build](https://github.com/Jarten0/short_flight?tab=readme-ov-file#to-build) to build the game yourself and try out the most recent additions. 
 
-# To build
-First clone the repository, as according to the first step of [To run](https://github.com/Jarten0/short_flight?tab=readme-ov-file#to-run).
+# To Build
+First clone the repository, as according to the first step of [To Run](https://github.com/Jarten0/short_flight?tab=readme-ov-file#to-run).
 
 Then follow this excerpt from [Bevy Quick Start - Setup](https://bevyengine.org/learn/quick-start/getting-started/setup/#rust-setup) in order to install everything needed for building a bevy game.
 (Up to date as of 2025-03-18)
