@@ -140,7 +140,7 @@ pub fn draw_colliders(
             gizmos.circle(
                 Isometry3d::new(translation2, Quat::from_rotation_x(f32::to_radians(90.0))),
                 radius,
-                color,
+                color.with_green(0.5),
             );
         }
         if let ColliderShape::Rect(rect) = collider.shape {
@@ -158,7 +158,7 @@ pub fn draw_colliders(
                     Quat::from_rotation_x(f32::to_radians(90.0)),
                 ),
                 rect.size(),
-                color,
+                color.with_green(0.5),
             );
         }
     }
@@ -181,32 +181,41 @@ pub fn on_collision(
         &ZHitbox,
         Option<((&TilePos, &TileDepth, &TileSlope, &TileFlags))>,
     )>,
+    mut gizmos: Gizmos,
 ) {
     let (rigidbody, global_transform, mut transform) = rigidbody.get_mut(trigger.this).unwrap();
-
-    let movement = rigidbody.previous_position - transform.translation;
+    let global_translation = global_transform.translation();
+    let relative_translation = &mut transform.translation;
 
     let (collider, global_transform2, zhitbox, tile_query) = other_col.get(trigger.other).unwrap();
+    let global_translation2 = global_transform2.translation();
 
-    if let Some((tile_pos, tile_depth, tile_slope, tile_rotate)) = tile_query {
-        let ColliderShape::Rect(rect) = &collider.shape else {
-            return;
-        };
+    let start = *relative_translation;
 
-        let tile_relative_y = global_transform2.translation().y - tile_depth.f32();
-        let hitbox_height = tile_relative_y + movement.y + 0.1;
+    if let Some((_tile_pos, tile_depth, tile_slope, _tile_flags)) = tile_query {
+        let tile_pos = global_translation2;
+        // let ColliderShape::Rect(rect) = &collider.shape else {
+        //     return;
+        // };
+        let movement = rigidbody.previous_position - *relative_translation;
+
+        // floor and roof hitboxes stretch to match player velocity :3
+        let hitbox_height = tile_pos.y + movement.y + 0.3;
 
         // let slope = {
         //     mesh::get_slope_corner_depths(tile_slope, inclusive)
         // }
 
-        if global_transform.translation().y <= hitbox_height {
-            transform.translation.y = tile_depth.f32() + tile_slope.0.length();
-        } else if global_transform.translation().y
-            >= tile_relative_y - hitbox_height + zhitbox.height()
-        {
-            transform.translation.y = tile_depth.f32() + tile_slope.0.length();
+        if global_translation.y <= hitbox_height {
+            let tile_top = tile_pos.y + tile_slope.0.length();
+            relative_translation.y = tile_top;
+        } else if global_translation.y >= tile_pos.y - hitbox_height + zhitbox.height() {
+            relative_translation.y = tile_pos.y + tile_slope.0.length();
+        } else {
+            *relative_translation -= Vec3::new(movement.x, 0.0, movement.z) * 8.;
         }
+
+        // log::info!("{}", (hitbox_height));
     };
 
     // match &collider.shape {

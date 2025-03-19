@@ -192,6 +192,8 @@ fn query_overlaps(
             ColliderShape::Circle { radius } => {
                 let p = transform.translation().xz();
 
+                const DRAW_GIZMOS: bool = false;
+
                 for (entity2, transform2, col, z_hitbox2, (dyn_info2, stat_info2)) in &all_objects {
                     if !z_hitbox.intersecting(
                         z_hitbox2,
@@ -200,6 +202,7 @@ fn query_overlaps(
                     ) {
                         continue;
                     }
+
                     let result: bool = match &col.shape {
                         ColliderShape::Rect(col_rect) => {
                             let rect = offset_rect(col_rect, transform2);
@@ -210,7 +213,7 @@ fn query_overlaps(
 
                             let distance = rect.center().distance(p);
 
-                            if combined_radius > distance - 0.5 {
+                            if DRAW_GIZMOS && combined_radius > distance - 0.5 {
                                 gizmos.circle(
                                     Isometry3d::new(
                                         Vec3::new(rect.center().x, 0.05, rect.center().y),
@@ -222,12 +225,19 @@ fn query_overlaps(
                             }
 
                             if combined_radius > distance {
-                                let end = Vec3::new(
-                                    rect.center().x,
-                                    1.0 + transform2.translation().y + z_hitbox2.y_tolerance,
-                                    rect.center().y,
-                                );
-                                gizmos.line(Vec3::new(p.x, 0.1, p.y), end, palettes::basic::LIME);
+                                if DRAW_GIZMOS {
+                                    let end = Vec3::new(
+                                        rect.center().x,
+                                        1.0 + transform2.translation().y + z_hitbox2.y_tolerance,
+                                        rect.center().y,
+                                    );
+                                    gizmos.line(
+                                        Vec3::new(p.x, 0.1, p.y),
+                                        end,
+                                        palettes::basic::LIME,
+                                    );
+                                }
+
                                 true
                             } else {
                                 false

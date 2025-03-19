@@ -1,1 +1,1 @@
-({Down:{"variant":Down,"time":0.0},AttackTackle:{"variant":AttackTackle,"time":0.0},Walking:{"variant":Walking,"time":0.0},Idle:{"variant":Idle,"time":0.0},Hurt:{"variant":Hurt,"time":0.0},AttackSwipe:{"variant":AttackSwipe,"time":0.0}})
+({Down:{"variant":Down,"time":0.0},Walking:{"variant":Walking,"time":0.0},Idle:{"variant":Idle,"time":0.0},Hurt:{"variant":Hurt,"time":0.0},AttackSwipe:{"variant":AttackSwipe,"time":0.0},AttackTackle:{"variant":AttackTackle,"time":0.0}})

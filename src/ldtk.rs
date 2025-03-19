@@ -58,7 +58,7 @@ impl From<i64> for TileDepth {
 
 #[derive(Debug, Reflect, Component, Default, Clone, Serialize, Deserialize)]
 #[serde(transparent)]
-pub struct TileSlope(pub Vec2);
+pub struct TileSlope(pub Vec3);
 
 /// Bitflags for how the tile should be visibly changed
 ///
@@ -354,7 +354,7 @@ fn spawn_map_components(commands: &mut Commands, ldtk_map: &LdtkMap, map_config:
                     can_interact: CollisionLayers::all(),
                 },
                 ZHitbox {
-                    y_tolerance: tile_depth.f32(),
+                    y_tolerance: tile_slope.0.abs().max_element(),
                     neg_y_tolerance: f32::NEG_INFINITY,
                 },
                 StaticCollision {},

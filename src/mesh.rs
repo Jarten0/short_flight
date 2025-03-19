@@ -9,6 +9,7 @@ use bevy::render::primitives::Aabb;
 use bevy_ecs_tilemap::helpers::square_grid::neighbors::SquareDirection;
 use bevy_ecs_tilemap::prelude::*;
 use image::ImageBuffer;
+use short_flight::collision::ZHitbox;
 use short_flight::ldtk::{TileFlags, TileSlope};
 use short_flight::serialize_to_file;
 use std::collections::HashMap;
@@ -43,12 +44,11 @@ struct MeshCacheKey {}
 
 #[derive(Default)]
 struct MeshInfo {
-    translation: Vec3,
     vertices: Vec<[f32; 3]>,
-    indices: Vec<u32>,
     texture_uvs: Vec<[f32; 2]>,
-    normals: Vec<[f32; 3]>,
+    indices: Vec<u32>,
     texture_index: Option<usize>,
+    translation: Vec3,
 }
 
 #[derive(Debug, Clone, Copy, Event, Reflect)]
@@ -303,24 +303,25 @@ fn get_mesh_components_from_info(
     asset_server: &Res<AssetServer>,
     tilemap_mesh_data: &TilemapMeshData,
     mesh_info: MeshInfo,
-) -> (Mesh3d, MeshMaterial3d<StandardMaterial>, Transform) {
+) -> (Mesh3d, MeshMaterial3d<StandardMaterial>, Transform, ZHitbox) {
     let MeshInfo {
         translation,
         vertices,
         indices,
         texture_uvs,
-        normals,
         texture_index,
     } = mesh_info;
 
-    let mesh = Mesh::new(
+    let mut mesh = Mesh::new(
         PrimitiveTopology::TriangleList,
         RenderAssetUsages::default(),
     )
     .with_inserted_attribute(Mesh::ATTRIBUTE_POSITION, vertices)
     .with_inserted_attribute(Mesh::ATTRIBUTE_UV_0, texture_uvs)
-    .with_inserted_attribute(Mesh::ATTRIBUTE_NORMAL, normals)
     .with_inserted_indices(Indices::U32(indices));
+
+    mesh.duplicate_vertices();
+    mesh.compute_flat_normals();
 
     let material = texture_index
         .map(|texture_index| {
@@ -336,6 +337,10 @@ fn get_mesh_components_from_info(
         Mesh3d(asset_server.add(mesh)),
         MeshMaterial3d(material),
         Transform::from_translation(translation),
+        ZHitbox {
+            y_tolerance: 0.0,
+            neg_y_tolerance: f32::NEG_INFINITY,
+        },
     );
     bundle
 }
@@ -358,14 +363,13 @@ fn create_mesh_from_tile_data(
         vertices,
         indices,
         texture_uvs,
-        normals,
         texture_index,
     } = &mut mesh;
 
     let (tile_pos, tile_texture, tile_depth, TileSlope(tile_slope), tilemap_id, tile_flags) =
         tile_data_query.get(tile).ok()?;
 
-    *translation = Vec3::new(tile_pos.x as f32, 0.0, tile_pos.y as f32);
+    *translation = Vec3::new(tile_pos.x as f32, tile_depth.f32(), tile_pos.y as f32);
 
     let (tile_storage, map_size) = tilemap_query
         .get(tilemap_id.0)
@@ -377,33 +381,28 @@ fn create_mesh_from_tile_data(
         SquareDirection::West,
     ]
     .map(|direction| tile_pos.square_offset(&direction, map_size))
-    .map(|value| value.map(|value| tile_storage.get(&value)).unwrap_or(None))
-    .map(|value| {
-        value
+    .map(|neighbor_pos| {
+        neighbor_pos
+            .map(|value| tile_storage.get(&value))
+            .unwrap_or(None)
+    })
+    .map(|neighbor_entity| {
+        neighbor_entity
             .map(|entity| tile_data_query.get(entity).ok())
             .unwrap_or(None)
     })
-    .map(|value| value.map(|value| tile_depth.f32() - value.2.f32()))
-    .map(|value| {
-        value
+    .map(|neighbor_components| {
+        neighbor_components.map(|components| tile_depth.f32() - components.2.f32())
+    })
+    .map(|height_difference| {
+        height_difference
             .map(|value| value.clamp(0., f32::INFINITY).ceil() as u32)
             .unwrap_or(200)
     });
 
-    let (vertex_data, index_data) = calculate_mesh_data(
-        tile_depth.f32(),
-        Vec3::from((*tile_slope, 0.)),
-        wall_counts,
-        *tile_flags,
-    );
+    let (vertex_data, index_data) = calculate_mesh_data(*tile_slope, wall_counts, *tile_flags);
 
-    *vertices = vertex_data.clone().into_iter().map(|(v, _, _)| v).collect();
-    *texture_uvs = vertex_data
-        .clone()
-        .into_iter()
-        .map(|(_, uv, _)| uv)
-        .collect();
-    *normals = vertex_data.clone().into_iter().map(|(_, _, n)| n).collect();
+    (*vertices, *texture_uvs) = vertex_data.into_iter().unzip();
     *indices = index_data;
 
     *texture_index.insert(tile_texture.0 as usize);
@@ -427,31 +426,24 @@ fn update_material_on<E>(
 
 fn move_on_drag(
     drag: Trigger<Pointer<Drag>>,
-    mut transforms: Query<(&mut Transform)>,
+    mut transforms: Query<(&mut Transform, &mut TileSlope)>,
     mut picking: ResMut<TilePickedMode>,
     kb: Res<ButtonInput<KeyCode>>,
-    mut gizmos: Gizmos,
 ) {
     if drag.button != PointerButton::Primary {
         return;
     }
     if kb.pressed(KeyCode::ShiftLeft) {
+        let (_, mut slope) = transforms.get_mut(drag.entity()).unwrap();
+
+        slope.0.y -= drag.delta.y * 0.01;
+
         return;
     }
     picking.set(TilePickedMode::Move { tile: drag.target });
-    let mut transform = transforms.get_mut(drag.entity()).unwrap();
+    let (mut transform, _) = transforms.get_mut(drag.entity()).unwrap();
+
     transform.translation.y -= drag.delta.y * 0.01;
-    gizmos.grid_3d(
-        // Isometry3d::IDENTITY,
-        Vec3::new(
-            transform.translation.x,
-            transform.translation.y.round(),
-            transform.translation.z,
-        ),
-        UVec3::new(40, 2, 40),
-        Vec3::ONE * 4.,
-        palettes::basic::RED,
-    );
 }
 
 fn adjust_on_release(
@@ -538,10 +530,11 @@ fn select_tile_for_painting(
 }
 
 fn adjust_tiles_via_keystrokes(
-    mut tile_data: Query<(&mut TileDepth, &mut TileSlope, &mut TileFlags)>,
+    mut tile_data: Query<(&mut TileDepth, &mut TileSlope, &mut TileFlags, &Transform)>,
     mut tile_change_writer: EventWriter<TileChanged>,
     kb: Res<ButtonInput<KeyCode>>,
     mut picking: ResMut<TilePickedMode>,
+    mut gizmos: Gizmos,
 ) {
     if let TilePickedMode::Paint { selected, painting } = &mut *picking {
         if kb.just_pressed(KeyCode::KeyE) {
@@ -566,21 +559,33 @@ fn adjust_tiles_via_keystrokes(
         return;
     };
 
-    let (depth, mut slope, mut rotate_mode) = tile_data.get_mut(tile).unwrap();
+    let (depth, mut slope, mut rotate_mode, transform) = tile_data.get_mut(tile).unwrap();
+
+    gizmos.grid_3d(
+        Vec3::new(
+            transform.translation.x,
+            transform.translation.y.round(),
+            transform.translation.z,
+        ),
+        UVec3::new(40, 2, 40),
+        Vec3::ONE * 4.,
+        palettes::basic::RED,
+    );
+
     if kb.just_pressed(KeyCode::KeyA) {
-        slope.0.x -= 1.0;
+        slope.0.x -= 0.25;
         tile_change_writer.send(TileChanged { tile });
         log::info!("Changed slope -x");
     } else if kb.just_pressed(KeyCode::KeyD) {
-        slope.0.x += 1.0;
+        slope.0.x += 0.25;
         tile_change_writer.send(TileChanged { tile });
         log::info!("Changed slope +x");
     } else if kb.just_pressed(KeyCode::KeyW) {
-        slope.0.y += 1.0;
+        slope.0.z += 0.25;
         tile_change_writer.send(TileChanged { tile });
         log::info!("Changed slope +y");
     } else if kb.just_pressed(KeyCode::KeyS) {
-        slope.0.y -= 1.0;
+        slope.0.z -= 0.25;
         tile_change_writer.send(TileChanged { tile });
         log::info!("Changed slope -y");
     } else if kb.just_pressed(KeyCode::KeyQ) {
@@ -623,22 +628,22 @@ fn save_tile_data(
     tilemaps: Query<&TileStorage>,
     tiles: Query<(&TilePos, &TileDepth, &TileSlope, &TileFlags)>,
 ) {
-    let mut depth_info: HashMap<[u32; 2], TileDepth> = HashMap::new();
-    let mut slope_info: HashMap<[u32; 2], TileSlope> = HashMap::new();
-    let mut flag_info: HashMap<[u32; 2], TileFlags> = HashMap::new();
+    let mut depth_info: HashMap<[u32; 2], &TileDepth> = HashMap::new();
+    let mut slope_info: HashMap<[u32; 2], &TileSlope> = HashMap::new();
+    let mut flag_info: HashMap<[u32; 2], &TileFlags> = HashMap::new();
     for tilemap in tilemaps.iter() {
         tilemap
             .iter()
             .filter_map(|item| item.map(|item| tiles.get(item).ok()).unwrap_or_default())
             .for_each(|(pos, depth, slope, flags)| {
                 if depth.f32() != 0.0 {
-                    depth_info.insert([pos.x, pos.y], depth.clone());
+                    depth_info.insert([pos.x, pos.y], depth);
                 }
-                if slope.0 != Vec2::ZERO {
-                    slope_info.insert([pos.x, pos.y], slope.clone());
+                if slope.0 != Vec3::ZERO {
+                    slope_info.insert([pos.x, pos.y], slope);
                 }
                 if !flags.is_empty() {
-                    flag_info.insert([pos.x, pos.y], *flags);
+                    flag_info.insert([pos.x, pos.y], flags);
                 }
             });
     }
@@ -665,11 +670,10 @@ fn call_save_event(kb: Res<ButtonInput<KeyCode>>, mut saves: EventWriter<GoSaveT
 }
 
 fn calculate_mesh_data(
-    depth: f32,
     slope: Vec3,
     wall_counts: [u32; 4],
     flags: TileFlags,
-) -> (Vec<([f32; 3], [f32; 2], [f32; 3])>, Vec<u32>) {
+) -> (Vec<([f32; 3], [f32; 2])>, Vec<u32>) {
     let mut vertices = vec![];
     let mut indices = vec![];
 
@@ -683,7 +687,7 @@ fn calculate_mesh_data(
         index_offset += maximum;
         new
     };
-    let mut insert = |data: (Vec<([f32; 3], [f32; 2], [f32; 3])>, Vec<u32>)| {
+    let mut insert = |data: (Vec<([f32; 3], [f32; 2])>, Vec<u32>)| {
         vertices.append(&mut { data.0 });
         indices.append(&mut offset_indices(data.1));
     };
@@ -694,7 +698,7 @@ fn calculate_mesh_data(
 
     for (side_index, side) in [[1, 0], [0, 3], [3, 2], [2, 1]].into_iter().enumerate() {
         let [v1, v2] = [top_vertices.0[side[0]].0, top_vertices.0[side[1]].0];
-        insert(slope_wall_data(depth, v1, v2));
+        insert(slope_wall_data(v1, v2));
 
         for wall in 0..wall_counts[side_index] {
             let (new_vertices, new_indices) = wall_vertices(v1, v2, side_index);
@@ -705,162 +709,13 @@ fn calculate_mesh_data(
                         v.0[1] -= wall as f32;
                         v
                     })
-                    .collect::<Vec<([f32; 3], [f32; 2], [f32; 3])>>(),
+                    .collect::<Vec<([f32; 3], [f32; 2])>>(),
                 new_indices,
             ));
         }
     }
     insert(top_vertices);
 
-    vertices.iter_mut().for_each(|v| v.0[1] += depth);
-
-    (vertices, indices)
-}
-
-/// generates the vertex data for a sloped wall, given:
-/// - the base depth of the tile
-/// - the two vertices that form the *top* line of the sloped wall
-fn slope_wall_data(
-    depth: f32,
-    v1: [f32; 3],
-    v2: [f32; 3],
-) -> (Vec<([f32; 3], [f32; 2], [f32; 3])>, Vec<u32>) {
-    let mut vertices: Vec<([f32; 3], [f32; 2], [f32; 3])> = vec![];
-    let mut indices: Vec<u32> = vec![];
-
-    let v1_is_slope = v1[1] > depth;
-    let v2_is_slope = v2[1] > depth;
-    if v1_is_slope {
-        vertices.push({
-            let mut v = v1.clone();
-            v[1] = depth;
-            (v, [1., 1.], [1., 1., 1.])
-        });
-    }
-    if v2_is_slope {
-        vertices.push({
-            let mut v = v2.clone();
-            v[1] = depth;
-            (v, [0., 1.], [1., 1., 1.])
-        });
-    }
-    if v1_is_slope | v2_is_slope {
-        let max = f32::max(v1[1], v2[1]);
-        vertices.push((v2.clone(), [0., (v1[1] - depth) / max], [1., 1., 1.]));
-        vertices.push((v2.clone(), [1., (v2[1] - depth) / max], [1., 1., 1.]));
-        if v1_is_slope & v2_is_slope {
-            indices.append(&mut (vec![0, 1, 2, 0, 2, 3]));
-        } else {
-            indices.append(&mut (vec![0, 1, 2]));
-        }
-    }
-    (vertices, indices)
-}
-
-/// generates the vertex data for the top of the mesh, given:
-/// - the x and y position of the tile
-/// - the height of each corner of the top face
-fn top_vertices(
-    corners: [f32; 4],
-    rotate_mode: TileFlags,
-) -> (Vec<([f32; 3], [f32; 2], [f32; 3])>, Vec<u32>) {
-    let mut vertices = vec![
-        ([1., corners[1], 0.]), // tr
-        ([0., corners[0], 0.]), // tl
-        ([0., corners[3], 1.]), // bl
-        ([1., corners[2], 1.]), // br
-    ];
-    let mut uvs = vec![[1., 0.], [0., 0.], [0., 1.], [1., 1.]];
-    let mut normals = vec![[0., 1., 0.], [0., 1., 0.], [0., 1., 0.], [0., 1., 0.]];
-    let mut indices = vec![0, 1, 2, 2, 3, 0];
-
-    //(1,0)
-    //(2,3)
-    if rotate_mode.intersects(TileFlags::FlipX) {
-        uvs.swap(1, 0);
-        uvs.swap(2, 3);
-    }
-    if rotate_mode.intersects(TileFlags::FlipY) {
-        uvs.swap(1, 2);
-        uvs.swap(0, 3);
-    }
-    if rotate_mode.intersects(TileFlags::FlipY) {
-        uvs.swap(1, 2);
-        uvs.swap(0, 3);
-    }
-    if rotate_mode.intersects(TileFlags::FlipTriangles) {
-        // 012,230 -> 123,301
-        indices = vec![1, 2, 3, 3, 0, 1];
-    }
-    if rotate_mode.intersects(TileFlags::Fold) {
-        vertices.append(&mut vec![
-            vertices[0].clone(), // tr2
-            vertices[2].clone(), // bl2
-        ]);
-        uvs.append(&mut vec![
-            uvs[0].clone(), // tr2
-            uvs[2].clone(), // bl2
-        ]);
-        normals.append(&mut vec![
-            normals[0].clone(), // tr2
-            normals[2].clone(), // bl2
-        ]);
-
-        indices = vec![0, 1, 2, 5, 3, 4];
-    }
-
-    let vertices = (0..vertices.len())
-        .map(|i| (vertices[i], uvs[i], normals[i]))
-        .collect();
-
-    (vertices, indices)
-}
-
-/// generates the vertex data for a wall, given:
-/// - two vertices that form the *top* line for the wall
-/// - a direction value to get the normals with
-fn wall_vertices(
-    wall_vertex_1: [f32; 3],
-    wall_vertex_2: [f32; 3],
-    side_index: usize,
-) -> (Vec<([f32; 3], [f32; 2], [f32; 3])>, Vec<u32>) {
-    let normal = match side_index {
-        0 => [0., 0., -1.],
-        1 => [1., 0., 0.],
-        2 => [0., 0., 1.],
-        3 => [-1., 0., 0.],
-        _ => panic!(),
-    };
-    let uv = match side_index {
-        // Back
-        0 => [[1.0, 0.0], [0.0, 0.0], [0.0, 1.0], [1.0, 1.0]],
-        // Front
-        2 => [[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]],
-        // Right
-        1 => [[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]],
-        // Left
-        3 => [[1.0, 0.0], [0.0, 0.0], [0.0, 1.0], [1.0, 1.0]],
-        // Top
-        4 => [[1.0, 0.0], [0.0, 0.0], [0.0, 1.0], [1.0, 1.0]],
-        // Bottom
-        5 => [[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]],
-        _ => [[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]],
-    };
-    let vertices = vec![
-        (wall_vertex_1.clone(), uv[0], normal.clone()),
-        (wall_vertex_2.clone(), uv[1], normal.clone()),
-        {
-            let mut v = wall_vertex_2.clone();
-            v[1] -= 1.0;
-            (v, uv[2], normal.clone())
-        },
-        {
-            let mut v = wall_vertex_1.clone();
-            v[1] -= 1.0;
-            (v, uv[3], normal.clone())
-        },
-    ];
-    let indices = vec![0, 1, 2, 2, 3, 0];
     (vertices, indices)
 }
 
@@ -886,16 +741,16 @@ pub(crate) fn get_slope_corner_depths(s: Vec3, inclusive: bool) -> [f32; 4] {
     let select_corner =
         |(point, map): (f32, (&Box<dyn Fn(f32) -> f32>, &Box<dyn Fn(f32) -> f32>))| {
             let x_component = map.0(s.x);
-            let y_component = map.1(s.y);
+            let z_component = map.1(s.z);
 
             let mut total = 0.;
 
             if x_component == 0. {
-                total += y_component * i
-            } else if y_component == 0. {
+                total += z_component * i
+            } else if z_component == 0. {
                 total += x_component * i
             } else {
-                total += (x_component + y_component) / 2.
+                total += (x_component + z_component) / 2.
             }
 
             point + total.clamp(0., f32::INFINITY)
@@ -909,4 +764,136 @@ pub(crate) fn get_slope_corner_depths(s: Vec3, inclusive: bool) -> [f32; 4] {
         a.next().unwrap(), // br
         a.next().unwrap(), // bl
     ]
+}
+
+/// generates the vertex data for the top of the mesh, given:
+/// - the x and y position of the tile
+/// - the height of each corner of the top face
+fn top_vertices(
+    corners: [f32; 4],
+    rotate_mode: TileFlags,
+) -> (Vec<([f32; 3], [f32; 2])>, Vec<u32>) {
+    let mut vertices = vec![
+        ([1., corners[1], 0.]), // tr
+        ([0., corners[0], 0.]), // tl
+        ([0., corners[3], 1.]), // bl
+        ([1., corners[2], 1.]), // br
+    ];
+    let mut uvs = vec![[1., 0.], [0., 0.], [0., 1.], [1., 1.]];
+    let mut indices = match rotate_mode {
+        flags if flags.intersects(TileFlags::FlipTriangles & TileFlags::Fold) => [0, 1, 2, 2, 3, 0],
+        flags if flags.intersects(TileFlags::FlipTriangles) => [0, 1, 2, 2, 3, 0],
+        flags if flags.intersects(TileFlags::Fold) => [0, 1, 2, 2, 3, 0],
+        _ => [0, 1, 2, 2, 3, 0],
+    }
+    .to_vec();
+
+    //(1,0)
+    //(2,3)
+    if rotate_mode.intersects(TileFlags::FlipX) {
+        uvs.swap(1, 0);
+        uvs.swap(2, 3);
+    }
+    if rotate_mode.intersects(TileFlags::FlipY) {
+        uvs.swap(1, 2);
+        uvs.swap(0, 3);
+    }
+    if rotate_mode.intersects(TileFlags::FlipTriangles) {
+        // 012,230 -> 123,301
+        indices = vec![1, 2, 3, 3, 0, 1];
+    }
+    if rotate_mode.intersects(TileFlags::Fold) {
+        vertices.append(&mut vec![
+            vertices[0].clone(), // tr2
+            vertices[2].clone(), // bl2
+        ]);
+        uvs.append(&mut vec![
+            uvs[0].clone(), // tr2
+            uvs[2].clone(), // bl2
+        ]);
+
+        indices = vec![0, 1, 2, 5, 3, 4];
+    }
+
+    let vertices = (0..vertices.len()).map(|i| (vertices[i], uvs[i])).collect();
+
+    (vertices, indices)
+}
+
+/// generates the vertex data for a sloped wall, given:
+/// - the base depth of the tile
+/// - the two vertices that form the *top* line of the sloped wall
+fn slope_wall_data(v1: [f32; 3], v2: [f32; 3]) -> (Vec<([f32; 3], [f32; 2])>, Vec<u32>) {
+    let depth = 0.0;
+    let mut vertices: Vec<([f32; 3], [f32; 2])> = vec![];
+    let mut indices: Vec<u32> = vec![];
+
+    let v1_is_slope = v1[1] > depth;
+    let v2_is_slope = v2[1] > depth;
+    if v1_is_slope {
+        vertices.push({
+            let mut v = v1.clone();
+            v[1] = depth;
+            (v, [1., 1.])
+        });
+    }
+    if v2_is_slope {
+        vertices.push({
+            let mut v = v2.clone();
+            v[1] = depth;
+            (v, [0., 1.])
+        });
+    }
+    if v1_is_slope | v2_is_slope {
+        let max = f32::max(v1[1], v2[1]);
+        vertices.push((v2.clone(), [0., (v1[1] - depth) / max]));
+        vertices.push((v2.clone(), [1., (v2[1] - depth) / max]));
+        if v1_is_slope & v2_is_slope {
+            indices.append(&mut (vec![0, 1, 2, 0, 2, 3]));
+        } else {
+            indices.append(&mut (vec![0, 1, 2]));
+        }
+    }
+    (vertices, indices)
+}
+
+/// generates the vertex data for a wall, given:
+/// - two vertices that form the *top* line for the wall
+/// - a direction value to get the normals with
+fn wall_vertices(
+    wall_vertex_1: [f32; 3],
+    wall_vertex_2: [f32; 3],
+    side_index: usize,
+) -> (Vec<([f32; 3], [f32; 2])>, Vec<u32>) {
+    let uv = match side_index {
+        // Back
+        0 => [[1.0, 0.0], [0.0, 0.0], [0.0, 1.0], [1.0, 1.0]],
+        // Front
+        2 => [[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]],
+        // Right
+        1 => [[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]],
+        // Left
+        3 => [[1.0, 0.0], [0.0, 0.0], [0.0, 1.0], [1.0, 1.0]],
+        // Top
+        4 => [[1.0, 0.0], [0.0, 0.0], [0.0, 1.0], [1.0, 1.0]],
+        // Bottom
+        5 => [[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]],
+        _ => [[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]],
+    };
+    let vertices = vec![
+        (wall_vertex_1.clone(), uv[0]),
+        (wall_vertex_2.clone(), uv[1]),
+        {
+            let mut v = wall_vertex_2.clone();
+            v[1] -= 1.0;
+            (v, uv[2])
+        },
+        {
+            let mut v = wall_vertex_1.clone();
+            v[1] -= 1.0;
+            (v, uv[3])
+        },
+    ];
+    let indices = vec![0, 1, 2, 2, 3, 0];
+    (vertices, indices)
 }

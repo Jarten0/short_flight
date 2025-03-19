@@ -65,7 +65,10 @@ fn insert_assets(
 ) {
     commands
         .entity(*shaymin)
-        .insert((anim_state::animation(&asset_server, &assets, anim_assets),))
+        .insert((
+            anim_state::animation(&asset_server, &assets, anim_assets),
+            InheritedVisibility::VISIBLE,
+        ))
         .with_child((
             Name::new("3D Sprite"),
             anim_state::sprite(&assets, sprite3d_params),
