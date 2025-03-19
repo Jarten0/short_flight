@@ -18,6 +18,10 @@ pub enum AnimType {
     AttackTackle,
     Hurt,
     Down,
+    /// The NPC has lost all HP and is playing faint animation
+    Fainting,
+    /// Plays if NPC does not despawn on faint.
+    Fainted,
 }
 
 // add default properties to variants here

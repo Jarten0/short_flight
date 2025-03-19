@@ -10,6 +10,7 @@ use std::f32::consts::PI;
 
 mod assets;
 mod mesh;
+mod npc;
 mod player;
 
 fn main() {
