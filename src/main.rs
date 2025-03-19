@@ -3,6 +3,8 @@
 
 use bevy::color::palettes::tailwind::{PINK_100, RED_500};
 use bevy::prelude::*;
+use bevy::remote::http::RemoteHttpPlugin;
+use bevy::remote::RemotePlugin;
 use bevy_editor_cam::prelude::*;
 use bevy_picking::pointer::PointerInteraction;
 use short_flight::ldtk::{self, LdtkMapBundle, SpawnMeshEvent};
@@ -20,6 +22,7 @@ fn main() {
         .add_plugins(MeshPickingPlugin)
         // game
         .add_plugins(assets::AssetsPlugin)
+        .add_plugins(npc::NPCPlugin)
         .add_plugins(player::ShayminPlugin)
         // lib
         .add_plugins(short_flight::collision::CollisionPlugin)
@@ -30,6 +33,8 @@ fn main() {
         .add_plugins(bevy_inspector_egui::quick::WorldInspectorPlugin::default())
         .add_plugins(bevy_sprite3d::Sprite3dPlugin)
         .add_plugins(bevy_editor_cam::DefaultEditorCamPlugins)
+        .add_plugins(RemotePlugin::default())
+        .add_plugins(RemoteHttpPlugin::default())
         // core game
         .add_systems(PreStartup, setup)
         .add_systems(Update, deferred_mesh_spawn)

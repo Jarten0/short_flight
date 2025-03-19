@@ -1,3 +1,4 @@
+use super::NPC;
 use bevy::prelude::*;
 
 /// When it reaches 0, the entity will be despawned.
@@ -16,7 +17,16 @@ pub struct Health {
 
 /// Event is sent when an entity reaches 0 hp.
 ///
+/// Should be accounted for when writing enemy AI logic.
 #[derive(Debug, Event)]
-pub struct OnDead;
+pub struct OnDead {
+    entity: Entity,
+}
 
-fn query_dead() {}
+pub(crate) fn query_dead(mut commands: Commands, mut query: Query<(Entity, &mut Health)>) {
+    for (entity, health) in &mut query {
+        if health.hp <= 0 {
+            commands.send_event(OnDead { entity });
+        }
+    }
+}

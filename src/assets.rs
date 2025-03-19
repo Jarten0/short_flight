@@ -2,8 +2,9 @@ use bevy::asset::saver::{AssetSaver, SavedAsset};
 use bevy::asset::{AssetLoader, AsyncWriteExt};
 use bevy::prelude::*;
 use bevy_asset_loader::prelude::*;
-use serde::Deserialize;
-use short_flight::animation::AnimationData;
+use serde::{Deserialize, Serialize};
+use short_flight::animation::{AnimType, AnimationData};
+use std::collections::HashMap;
 use std::marker::PhantomData;
 use thiserror::Error;
 
@@ -26,6 +27,7 @@ pub enum AssetStates {
     #[default]
     // First,
     PlayerLoading,
+    NPCsLoading,
     Done,
 }
 
@@ -91,3 +93,6 @@ where
         &["ron"]
     }
 }
+
+#[derive(Debug, Default, Asset, Reflect, Deserialize, Serialize)]
+pub(super) struct AnimationAssets(pub HashMap<AnimType, AnimationData>);

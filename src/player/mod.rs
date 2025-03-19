@@ -1,5 +1,6 @@
+use crate::assets::AnimationAssets;
 use crate::assets::{AssetStates, RonAssetLoader};
-use assets::{AnimationAsset, ShayminAssets};
+use assets::ShayminAssets;
 use bevy::prelude::*;
 use bevy_asset_loader::loading_state::LoadingStateAppExt;
 use bevy_asset_loader::prelude::*;
@@ -28,8 +29,8 @@ impl Plugin for ShayminPlugin {
                 (physics::control_shaymin, anim_state::update_materials).chain(),
             )
             .add_systems(PostUpdate, (physics::draw_colliders).chain())
-            .init_asset::<AnimationAsset>()
-            .register_asset_loader::<RonAssetLoader<AnimationAsset>>(RonAssetLoader::default())
+            .init_asset::<AnimationAssets>()
+            .register_asset_loader::<RonAssetLoader<AnimationAssets>>(RonAssetLoader::default())
             .add_loading_state(
                 LoadingState::new(AssetStates::PlayerLoading)
                     .continue_to_state(AssetStates::Done)
@@ -60,7 +61,7 @@ fn insert_assets(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
     assets: Res<ShayminAssets>,
-    anim_assets: Res<Assets<AnimationAsset>>,
+    anim_assets: Res<Assets<AnimationAssets>>,
     sprite3d_params: Sprite3dParams,
 ) {
     commands
@@ -93,7 +94,7 @@ fn retry(mut commands: Commands, asset_server: Res<AssetServer>) {
         .into_iter()
         .map(|animation| (animation.variant, animation))
         .collect();
-        AnimationAsset(hash_map)
+        AnimationAssets(hash_map)
     };
     short_flight::serialize_to_file(&asset, "assets/shaymin/animations.ron");
     let animations = asset_server.add(asset);

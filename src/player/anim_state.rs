@@ -1,12 +1,11 @@
 use std::collections::HashMap;
 
 use super::assets::ShayminAssets;
+use crate::assets::AnimationAssets;
 use bevy::color::palettes;
 use bevy::prelude::*;
 use bevy_sprite3d::prelude::*;
 use short_flight::animation::{AnimType, AnimationData};
-
-use super::assets::AnimationAsset;
 
 /// Handles the state managment of the player
 #[derive(Debug, Component)]
@@ -32,7 +31,7 @@ impl ShayminAnimation {
 pub fn animation(
     asset_server: &AssetServer,
     assets: &ShayminAssets,
-    anim_assets: Res<Assets<AnimationAsset>>,
+    anim_assets: Res<Assets<AnimationAssets>>,
 ) -> ShayminAnimation {
     let materials = materials(asset_server);
     let default = Default::default();
