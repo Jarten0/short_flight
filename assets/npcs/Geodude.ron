@@ -1,0 +1,4 @@
+NPCData(
+    display_name: "Geodude",
+    info: Enemy
+)

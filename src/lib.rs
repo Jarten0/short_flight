@@ -10,7 +10,6 @@ use serde::{Deserialize, Serialize};
 pub mod animation;
 pub mod collision;
 pub mod editor;
-pub mod ldtk;
 
 pub fn deserialize_files<T>(
     file_paths: impl IntoIterator<Item = impl Into<PathBuf>>,

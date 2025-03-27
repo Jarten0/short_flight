@@ -1,4 +1,5 @@
 use crate::ldtk::{self, SpawnMeshEvent, TileDepth};
+use crate::ldtk::{TileFlags, TileSlope};
 use bevy::asset::RenderAssetUsages;
 use bevy::color::palettes;
 use bevy::math::bounding::Aabb3d;
@@ -10,7 +11,6 @@ use bevy_ecs_tilemap::helpers::square_grid::neighbors::SquareDirection;
 use bevy_ecs_tilemap::prelude::*;
 use image::ImageBuffer;
 use short_flight::collision::ZHitbox;
-use short_flight::ldtk::{TileFlags, TileSlope};
 use short_flight::serialize_to_file;
 use std::collections::HashMap;
 

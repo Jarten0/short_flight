@@ -1,7 +1,7 @@
-use crate::mesh;
-
 use super::anim_state::ShayminAnimation;
 use super::{Client, ClientQuery};
+use crate::ldtk::{TileDepth, TileFlags, TileSlope};
+use crate::mesh;
 use bevy::color::palettes;
 use bevy::prelude::*;
 use bevy_ecs_tilemap::tiles::TilePos;
@@ -10,7 +10,6 @@ use short_flight::collision::{
     Collider, ColliderShape, CollisionEvent, CollisionLayers, DynamicCollision, StaticCollision,
     ZHitbox,
 };
-use short_flight::ldtk::{TileDepth, TileFlags, TileSlope};
 
 #[derive(Debug, Component)]
 #[require(DynamicCollision)]

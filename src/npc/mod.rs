@@ -1,7 +1,5 @@
-use crate::assets::AssetStates;
 use bevy::prelude::*;
 use bevy::reflect::Enum;
-use bevy_asset_loader::prelude::*;
 use enum_iterator::Sequence;
 use serde::{Deserialize, Serialize};
 use short_flight::animation::{AnimType, AnimationData};
@@ -14,20 +12,31 @@ pub struct NPCPlugin;
 impl Plugin for NPCPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(Update, (stats::query_dead))
-            .add_systems(Startup, load_npcs);
+            .add_systems(PreStartup, load_npcs)
+            .init_asset::<NPCData>();
     }
 }
 
 /// Marks this entity as an in-world NPC, that can interact with the player and the world via
 /// collision, player interact, contact damage,
 /// and can perform actions via NPC AI.
-#[derive(Component, Default, Reflect, Clone, PartialEq, Eq, PartialOrd, Sequence, Hash)]
-#[require(NPCInfo)]
+#[derive(Component, Default, Reflect, Clone, Copy, PartialEq, Eq, PartialOrd, Sequence, Hash)]
 pub enum NPC {
     /// npc missing identifier
     #[default]
     Void,
     Geodude,
+}
+
+impl TryFrom<usize> for NPC {
+    type Error = ();
+
+    fn try_from(value: usize) -> Result<Self, Self::Error> {
+        if value > enum_iterator::cardinality::<NPC>() {
+            return Err(());
+        }
+        Ok(enum_iterator::all::<NPC>().nth(value).unwrap())
+    }
 }
 
 /// Marks what kind of NPC this is
@@ -73,11 +82,49 @@ pub struct NPCData {
     info: NPCInfo,
 }
 
-fn load_npcs(asset_server: Res<AssetServer>, mut commands: Commands) {
-    let handles = enum_iterator::all::<NPC>().map(|npc| {
-        let path = "npcs/".to_string() + npc.variant_name();
-        (npc, asset_server.load::<NPCData>(path))
-    });
+impl NPCData {
+    const FILE_EXTENSION: &str = ".ron";
+}
 
-    commands.insert_resource(NPCAlmanac(handles.collect()));
+fn load_npcs(asset_server: Res<AssetServer>, mut commands: Commands) {
+    let handles = enum_iterator::all()
+        .map(|npc: NPC| {
+            let path = "npcs/".to_string() + npc.variant_name() + NPCData::FILE_EXTENSION;
+            (npc, asset_server.load::<NPCData>(path))
+        })
+        .collect();
+
+    commands.insert_resource(NPCAlmanac(handles));
+}
+
+pub struct SpawnNPC {
+    pub npc_id: NPC,
+    pub position: Vec3,
+}
+
+impl Command for SpawnNPC {
+    fn apply(self, world: &mut World) {
+        let npc_almanac = world.resource::<NPCAlmanac>();
+        let npc_data = world.resource::<Assets<NPCData>>();
+
+        let data = npc_data
+            .get(npc_almanac.0.get(&self.npc_id).unwrap_or_else(|| {
+                panic!(
+                    "Could not find NPC almanac entry for {}",
+                    self.npc_id as isize
+                );
+            }))
+            .unwrap_or_else(|| {
+                panic!(
+                    "Could not find NPC data asset for entry {}",
+                    self.npc_id as isize
+                );
+            });
+
+        world.spawn((
+            self.npc_id,
+            data.info.clone(),
+            Transform::from_translation(self.position),
+        ));
+    }
 }

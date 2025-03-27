@@ -1,5 +1,3 @@
-use crate::collision::{Collider, ColliderShape, CollisionLayers, StaticCollision, ZHitbox};
-use crate::deserialize_file;
 use bevy::prelude::Asset;
 use bevy::{asset::io::Reader, reflect::TypePath};
 use bevy::{
@@ -15,8 +13,12 @@ use bevy_ecs_tilemap::{
 };
 use bitflags::bitflags;
 use serde::{Deserialize, Serialize};
+use short_flight::collision::{Collider, ColliderShape, CollisionLayers, StaticCollision, ZHitbox};
+use short_flight::deserialize_file;
 use std::{collections::HashMap, io::ErrorKind};
 use thiserror::Error;
+
+use crate::npc::{SpawnNPC, NPC};
 
 /// Initialized differently from the LDTK map data, this determines how high up the object is.
 // There's no settlement on if the value will be represented as an `i64` in the future
@@ -299,7 +301,42 @@ fn spawn_map_components(commands: &mut Commands, ldtk_map: &LdtkMap, map_config:
         .rev()
         .enumerate()
     {
+        // Instantiate layer entities here
+        for entity in layer.entity_instances.iter() {
+            if entity.tags.contains(&"NPC".to_string()) {
+                let id = entity
+                    .field_instances
+                    .iter()
+                    .find(|field| field.identifier == "NPC_ID")
+                    .unwrap()
+                    .value
+                    .as_ref()
+                    .unwrap()
+                    .as_u64()
+                    .unwrap();
+
+                commands.queue(SpawnNPC {
+                    npc_id: NPC::try_from(id as usize).unwrap(),
+                    position: Vec3::new(entity.px[0] as f32 / 32., 0.0, entity.px[1] as f32 / 32.),
+                });
+
+                let name = entity
+                    .field_instances
+                    .iter()
+                    .find(|field| field.identifier == "Name")
+                    .unwrap()
+                    .value
+                    .as_ref()
+                    .unwrap()
+                    .as_u64()
+                    .unwrap();
+
+                log::info!("Spawned NPC: {}", name)
+            }
+        }
+
         let Some(uid) = layer.tileset_def_uid else {
+            log::info!("Tileset uid not found for layer {}", layer_id);
             continue;
         };
 

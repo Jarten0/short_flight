@@ -1,16 +1,17 @@
 #![feature(int_roundings)]
 #![feature(generic_arg_infer)]
 
+use crate::ldtk::{LdtkMapBundle, SpawnMeshEvent};
 use bevy::color::palettes::tailwind::{PINK_100, RED_500};
 use bevy::prelude::*;
 use bevy::remote::http::RemoteHttpPlugin;
 use bevy::remote::RemotePlugin;
 use bevy_editor_cam::prelude::*;
 use bevy_picking::pointer::PointerInteraction;
-use short_flight::ldtk::{self, LdtkMapBundle, SpawnMeshEvent};
 use std::f32::consts::PI;
 
 mod assets;
+mod ldtk;
 mod mesh;
 mod npc;
 mod player;
@@ -24,9 +25,9 @@ fn main() {
         .add_plugins(assets::AssetsPlugin)
         .add_plugins(npc::NPCPlugin)
         .add_plugins(player::ShayminPlugin)
+        .add_plugins(ldtk::LdtkPlugin)
         // lib
         .add_plugins(short_flight::collision::CollisionPlugin)
-        .add_plugins(short_flight::ldtk::LdtkPlugin)
         .add_plugins(mesh::TileMeshManagerPlugin)
         // third party
         .add_plugins(bevy_ecs_tilemap::TilemapPlugin)
