@@ -1,6 +1,7 @@
 use bevy::color::palettes;
 use bevy::prelude::*;
 use bitflags::bitflags;
+use serde::{Deserialize, Serialize};
 
 pub struct CollisionPlugin;
 
@@ -71,7 +72,7 @@ pub struct DynamicCollision {}
 #[derive(Debug, Reflect, Component, Default)]
 pub struct StaticCollision {}
 
-#[derive(Debug, Reflect, Component)]
+#[derive(Debug, Reflect, Component, Serialize, Deserialize, Clone)]
 #[require(ZHitbox, Transform)]
 pub struct Collider {
     pub dynamic: bool,
@@ -80,7 +81,7 @@ pub struct Collider {
     pub can_interact: CollisionLayers,
 }
 
-#[derive(Debug, Clone, Reflect)]
+#[derive(Debug, Clone, Reflect, Serialize, Deserialize)]
 pub struct CollisionLayers(u32);
 
 bitflags! {
@@ -111,7 +112,7 @@ impl Default for CollisionLayers {
 /// so being conservative with new additions where possible is ideal.
 ///
 /// It's also ideal if this is not directly accessed by user code, for that reason.
-#[derive(Debug, Reflect)]
+#[derive(Debug, Reflect, Serialize, Deserialize, Clone)]
 pub enum ColliderShape {
     /// A rectangle, second easiest to calculate collisions with. Useful for bounding boxes.
     ///
@@ -120,6 +121,7 @@ pub enum ColliderShape {
     /// The easiest shape to calculate collisions with, is useful for general object shapes.
     Circle { radius: f32 },
     /// the expensive but most customizable option, and the only one that makes use of the asset system
+    #[serde(skip)]
     Mesh(Handle<Mesh>),
 }
 

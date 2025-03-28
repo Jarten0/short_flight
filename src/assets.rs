@@ -13,11 +13,13 @@ pub struct AssetsPlugin;
 impl Plugin for AssetsPlugin {
     fn build(&self, app: &mut App) {
         app.init_state::<AssetStates>()
+        .init_asset::<AnimationSpritesheet>()
             // .add_loading_state(
             //     LoadingState::new(AssetStates::First).continue_to_state(AssetStates::PlayerLoading), // .load_collection::<shaymin::SpritesCollection>(),
             // )
-            .init_asset::<AnimationData>()
-            .register_asset_loader::<RonAssetLoader<AnimationData>>(RonAssetLoader::default());
+            // .init_asset::<AnimationData>()
+            // .register_asset_loader::<RonAssetLoader<AnimationData>>(RonAssetLoader::default())
+            ;
     }
 }
 
@@ -96,3 +98,41 @@ where
 
 #[derive(Debug, Default, Asset, Reflect, Deserialize, Serialize)]
 pub(super) struct AnimationAssets(pub HashMap<AnimType, AnimationData>);
+
+/// An ordered layout of corresponding animation data for a given spritesheet
+#[derive(Debug, Default, Asset, Reflect, Deserialize, Serialize)]
+pub(super) struct AnimationSpritesheet {
+    pub animations: Vec<AnimType>,
+    pub sprite_size: u32,
+    #[serde(skip)]
+    pub data: AnimationAssets,
+    #[serde(skip)]
+    pub atlas: Option<TextureAtlasLayout>,
+}
+
+impl std::ops::Index<AnimType> for AnimationSpritesheet {
+    type Output = AnimationData;
+
+    fn index(&self, index: AnimType) -> &Self::Output {
+        &self.data.0[&index]
+    }
+}
+
+impl AnimationSpritesheet {
+    fn get_texture_atlas(&self) -> TextureAtlasLayout {
+        let max_items = self
+            .data
+            .0
+            .iter()
+            .map(|data| data.1.frames)
+            .max()
+            .unwrap_or(0);
+        TextureAtlasLayout::from_grid(
+            UVec2::splat(32),
+            max_items,
+            self.animations.len() as u32,
+            None,
+            None,
+        )
+    }
+}

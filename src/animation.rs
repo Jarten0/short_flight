@@ -71,13 +71,14 @@ impl AnimType {
     }
 }
 
-#[derive(Debug, Default, Reflect, Clone, Serialize, Deserialize, Asset)]
+#[derive(Debug, Default, Reflect, Clone, Serialize, Deserialize)]
 pub struct AnimationData {
     #[serde(alias = "type")]
     pub variant: AnimType,
     #[serde(default)]
     #[serde(alias = "length")]
-    pub time: f32,
+    #[serde(alias = "time")]
+    pub frames: u32,
     #[serde(flatten)]
     #[serde(default)]
     #[serde(alias = "can_move")]
@@ -98,7 +99,7 @@ impl AnimationData {
     pub fn process_timer(&self, frame: &mut f32, delta: f32) -> bool {
         *frame += delta;
 
-        if self.variant.use_timer() && *frame >= self.time {
+        if self.variant.use_timer() && *frame >= self.frames as f32 {
             *frame = 0.0;
             return true;
         }

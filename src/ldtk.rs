@@ -18,7 +18,8 @@ use short_flight::deserialize_file;
 use std::{collections::HashMap, io::ErrorKind};
 use thiserror::Error;
 
-use crate::npc::{SpawnNPC, NPC};
+use crate::npc;
+use crate::npc::{commands::SpawnNPC, NPC};
 
 /// Initialized differently from the LDTK map data, this determines how high up the object is.
 // There's no settlement on if the value will be represented as an `i64` in the future
@@ -315,7 +316,7 @@ fn spawn_map_components(commands: &mut Commands, ldtk_map: &LdtkMap, map_config:
                     .as_u64()
                     .unwrap();
 
-                commands.queue(SpawnNPC {
+                commands.queue(npc::commands::SpawnNPC {
                     npc_id: NPC::try_from(id as usize).unwrap(),
                     position: Vec3::new(entity.px[0] as f32 / 32., 0.0, entity.px[1] as f32 / 32.),
                 });
@@ -354,6 +355,8 @@ fn spawn_map_components(commands: &mut Commands, ldtk_map: &LdtkMap, map_config:
         // Create tiles for this layer from LDtk's grid_tiles and auto_layer_tiles
         let mut storage = TileStorage::empty(size);
         let mut children = vec![];
+
+        // iterate over potential entities in this layer via layer.entity_instances
 
         for (index, tile) in layer
             .grid_tiles
