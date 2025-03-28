@@ -1,4 +1,56 @@
 NPCData(
     display_name: "Geodude",
-    info: Enemy
+    info: Enemy(),
+    collider: Some(Collider(
+        dynamic: true,
+        shape: Circle(
+            radius: 20.0,
+        ),
+        layers: CollisionLayers(4),
+        can_interact: CollisionLayers(15),
+    )),
+    stats: Some((
+        Health(20),
+        Damage(5),
+    )),
+    spritesheet: AnimationSpritesheet(
+        animations: [
+            Idle,
+            Walking, // AttackSwipe,
+        // AttackTackle,
+        // Hurt,
+        // Down,
+        // Fainting,
+        // Fainted,
+        ],
+        sprite_size: UVec2(
+            x: 32,
+            y: 32,
+        ),
+        data: {
+            Idle: AnimationData(
+                frames: 2,
+            ),
+            Walking: AnimationData(
+                frames: 2,
+            ), // AttackSwipe: AnimationData(
+        //     frames: 2,
+        // ),
+        // AttackTackle: AnimationData(
+        //     frames: 2,
+        // ),
+        // Hurt: AnimationData(
+        //     frames: 2,
+        // ),
+        // Down: AnimationData(
+        //     frames: 2,
+        // ),
+        // Fainting: AnimationData(
+        //     frames: 2,
+        // ),
+        // Fainted: AnimationData(
+        //     frames: 2,
+        // ),
+        },
+    ),
 )

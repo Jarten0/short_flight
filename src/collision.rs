@@ -82,6 +82,7 @@ pub struct Collider {
 }
 
 #[derive(Debug, Clone, Reflect, Serialize, Deserialize)]
+// #[serde(transparent)]
 pub struct CollisionLayers(u32);
 
 bitflags! {

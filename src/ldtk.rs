@@ -329,7 +329,7 @@ fn spawn_map_components(commands: &mut Commands, ldtk_map: &LdtkMap, map_config:
                     .value
                     .as_ref()
                     .unwrap()
-                    .as_u64()
+                    .as_str()
                     .unwrap();
 
                 log::info!("Spawned NPC: {}", name)

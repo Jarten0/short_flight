@@ -2,6 +2,8 @@ use bevy::prelude::*;
 use enum_iterator::Sequence;
 use serde::{Deserialize, Serialize};
 
+use crate::assets::RonAssetLoader;
+
 pub mod ai;
 pub mod animation;
 pub mod commands;
@@ -17,7 +19,8 @@ impl Plugin for NPCPlugin {
             .add_systems(PreStartup, file::load_npcs)
             .add_systems(PreUpdate, animation::update_sprite_timer)
             .add_systems(PostUpdate, animation::update_npc_sprites)
-            .init_asset::<file::NPCData>();
+            .init_asset::<file::NPCData>()
+            .init_asset_loader::<RonAssetLoader<file::NPCData>>();
     }
 }
 
@@ -28,7 +31,7 @@ impl Plugin for NPCPlugin {
 pub enum NPC {
     /// npc missing identifier
     #[default]
-    Void,
+    Void = 0,
     Geodude,
 }
 

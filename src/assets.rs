@@ -33,9 +33,17 @@ pub enum AssetStates {
     Done,
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub(crate) struct RonAssetLoader<T> {
     marker: PhantomData<T>,
+}
+
+impl<T: Default> Default for RonAssetLoader<T> {
+    fn default() -> Self {
+        Self {
+            marker: Default::default(),
+        }
+    }
 }
 
 #[derive(Debug, Error)]
@@ -96,18 +104,20 @@ where
     }
 }
 
-#[derive(Debug, Default, Asset, Reflect, Deserialize, Serialize)]
+#[derive(Debug, Default, Asset, Reflect, Serialize, Deserialize, Clone)]
+#[serde(transparent)]
 pub(super) struct AnimationAssets(pub HashMap<AnimType, AnimationData>);
 
 /// An ordered layout of corresponding animation data for a given spritesheet
-#[derive(Debug, Default, Asset, Reflect, Deserialize, Serialize)]
+#[derive(Debug, Default, Asset, Reflect, Deserialize, Serialize, Clone)]
 pub(super) struct AnimationSpritesheet {
     pub animations: Vec<AnimType>,
-    pub sprite_size: u32,
+    pub sprite_size: UVec2,
+    data: AnimationAssets,
     #[serde(skip)]
-    pub data: AnimationAssets,
+    pub atlas: Option<Handle<TextureAtlasLayout>>,
     #[serde(skip)]
-    pub atlas: Option<TextureAtlasLayout>,
+    pub texture: Option<Handle<Image>>,
 }
 
 impl std::ops::Index<AnimType> for AnimationSpritesheet {
@@ -119,7 +129,7 @@ impl std::ops::Index<AnimType> for AnimationSpritesheet {
 }
 
 impl AnimationSpritesheet {
-    fn get_texture_atlas(&self) -> TextureAtlasLayout {
+    pub fn get_texture_atlas(&self) -> TextureAtlasLayout {
         let max_items = self
             .data
             .0
@@ -128,7 +138,7 @@ impl AnimationSpritesheet {
             .max()
             .unwrap_or(0);
         TextureAtlasLayout::from_grid(
-            UVec2::splat(32),
+            self.sprite_size,
             max_items,
             self.animations.len() as u32,
             None,

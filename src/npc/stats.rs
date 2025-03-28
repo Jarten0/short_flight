@@ -7,7 +7,6 @@ use serde::{Deserialize, Serialize};
 /// If death is not handled, then it automatically despawns.
 #[derive(Debug, Default, Component, Reflect, Serialize, Deserialize, Clone)]
 #[require(NPC)]
-#[serde(transparent)]
 pub struct Health {
     pub hp: u64,
     /// can be set to true, but can never be set to false beyond initialization.
@@ -38,5 +37,4 @@ pub(crate) fn query_dead(mut commands: Commands, mut query: Query<(Entity, &mut 
 /// Multiplies with the power of the attack to increase the damage dealt.
 #[derive(Debug, Component, Reflect, Serialize, Deserialize, Clone)]
 #[require(NPC)]
-#[serde(transparent)]
 pub struct Damage(pub u64);
