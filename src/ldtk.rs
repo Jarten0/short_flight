@@ -309,30 +309,24 @@ fn spawn_map_components(commands: &mut Commands, ldtk_map: &LdtkMap, map_config:
                     .field_instances
                     .iter()
                     .find(|field| field.identifier == "NPC_ID")
-                    .unwrap()
+                    .expect("Expected to find NPC_ID field")
                     .value
                     .as_ref()
-                    .unwrap()
+                    .expect("No value found for NPC_ID")
                     .as_u64()
-                    .unwrap();
-
-                commands.queue(npc::commands::SpawnNPC {
-                    npc_id: NPC::try_from(id as usize).unwrap(),
-                    position: Vec3::new(entity.px[0] as f32 / 32., 0.0, entity.px[1] as f32 / 32.),
-                });
+                    .unwrap("Expected unsigned integer for NPC_ID, found something else");
 
                 let name = entity
                     .field_instances
                     .iter()
                     .find(|field| field.identifier == "Name")
-                    .unwrap()
-                    .value
-                    .as_ref()
-                    .unwrap()
-                    .as_str()
-                    .unwrap();
+                    .map(|field| field.value.as_ref().unwrap_or("[VOIDED]").as_str().expect("Expected string value for Name, found something else"));
 
-                log::info!("Spawned NPC: {}", name)
+                commands.queue(npc::commands::SpawnNPC {
+                    npc_id: NPC::try_from(id as usize).unwrap(),
+                    position: Vec3::new(entity.px[0] as f32 / 32., 0.0, entity.px[1] as f32 / 32.),
+                    name
+                });
             }
         }
 

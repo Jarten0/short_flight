@@ -7,6 +7,7 @@ use bevy_sprite3d::{Sprite3d, Sprite3dBuilder, Sprite3dParams};
 pub struct SpawnNPC {
     pub npc_id: NPC,
     pub position: Vec3,
+    pub name: Option<String>,
 }
 
 impl Command for SpawnNPC {
@@ -36,7 +37,7 @@ impl Command for SpawnNPC {
             self.npc_id,
             data.info.clone(),
             Transform::from_translation(self.position),
-            Name::new(data.display_name.clone()),
+            Name::new(self.name.clone().unwrap_or(data.display_name.clone())),
         );
         let stats = (
             data.stats.clone().unwrap(),
@@ -82,5 +83,8 @@ impl Command for SpawnNPC {
                 entity.insert(stats);
             }
         };
+
+        log::info!("Spawned NPC: {}", self.name.unwrap_or(data.display_name.clone())
+
     }
 }

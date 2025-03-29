@@ -39,10 +39,7 @@ fn main() {
         // core game
         .add_systems(PreStartup, setup)
         .add_systems(Update, deferred_mesh_spawn)
-        .add_systems(
-            Update,
-            (draw_mesh_intersections, pause_on_space, toggle_projection),
-        )
+        .add_systems(Update, (draw_mesh_intersections, toggle_projection))
         .add_event::<SpawnMeshEvent>()
         .run();
 }
@@ -119,13 +116,6 @@ fn deferred_mesh_spawn(
         },
         Name::new("LdtkMap"),
     ));
-}
-
-// lock the camera in place when space is held
-fn pause_on_space(mut camera: Query<&mut EditorCam>, kb: Res<ButtonInput<KeyCode>>) {
-    camera
-        .iter_mut()
-        .for_each(|mut camera| camera.enabled_motion.pan = !kb.pressed(KeyCode::Space));
 }
 
 /// A system that draws hit indicators for every pointer.
