@@ -10,6 +10,6 @@ use crate::assets::AnimationAssets;
 pub struct ShayminAssets {
     #[asset(path = "shaymin/shaymin.png")]
     pub shaymin: Handle<Image>,
-    #[asset(path = "shaymin/animations.ron")]
+    #[asset(path = "shaymin/animations.anim.ron")]
     pub animations: Handle<AnimationAssets>,
 }

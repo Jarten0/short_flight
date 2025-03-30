@@ -1,8 +1,12 @@
 use bevy::prelude::*;
+use bevy::reflect::Enum;
+use bevy_asset_loader::loading_state::config::ConfigureLoadingState;
+use bevy_asset_loader::loading_state::{LoadingState, LoadingStateAppExt};
+use bevy_asset_loader::mapped::MapKey;
 use enum_iterator::Sequence;
 use serde::{Deserialize, Serialize};
 
-use crate::assets::RonAssetLoader;
+use crate::assets::{RonAssetLoader, ShortFlightLoadingState};
 
 pub mod ai;
 pub mod animation;
@@ -14,25 +18,47 @@ pub struct NPCPlugin;
 
 impl Plugin for NPCPlugin {
     fn build(&self, app: &mut App) {
-        let init_asset = app
-            .add_systems(Update, stats::query_dead)
-            .add_systems(PreStartup, file::load_npcs)
+        app.add_systems(Update, stats::query_dead)
+            .add_systems(
+                OnExit(ShortFlightLoadingState::LoadNPCAssets),
+                file::validate_npc_data,
+            )
             .add_systems(PreUpdate, animation::update_sprite_timer)
-            .add_systems(PostUpdate, animation::update_npc_sprites)
-            .init_asset::<file::NPCData>()
-            .init_asset_loader::<RonAssetLoader<file::NPCData>>();
+            .add_systems(PostUpdate, animation::update_npc_sprites);
     }
 }
 
 /// Marks this entity as an in-world NPC, that can interact with the player and the world via
 /// collision, player interact, contact damage,
 /// and can perform actions via NPC AI.
-#[derive(Component, Default, Reflect, Clone, Copy, PartialEq, Eq, PartialOrd, Sequence, Hash)]
+#[derive(
+    Component, Default, Reflect, Sequence, Deserialize, Clone, Copy, PartialEq, Eq, PartialOrd, Hash,
+)]
 pub enum NPC {
     /// npc missing identifier
     #[default]
     Void = 0,
     Geodude,
+}
+
+impl MapKey for NPC {
+    fn from_asset_path(path: &bevy::asset::AssetPath) -> Self {
+        let binding = std::path::PathBuf::from(
+            path.path()
+                .file_stem()
+                .unwrap_or_else(|| panic!("Could not get the file stem for {}", path))
+                .to_str()
+                .unwrap_or_else(|| panic!("Could not convert {} to unicode", path)),
+        );
+        let stem = binding
+            .file_stem()
+            .unwrap_or_else(|| panic!("Could not get the file stem for {}", path))
+            .to_str()
+            .unwrap_or_else(|| panic!("Could not convert {} to unicode", path));
+        enum_iterator::all::<Self>()
+            .find(|variant| variant.variant_name() == stem)
+            .unwrap_or_else(|| panic!("Could not find an NPC variant for {} [path:{}]", stem, path))
+    }
 }
 
 impl TryFrom<usize> for NPC {

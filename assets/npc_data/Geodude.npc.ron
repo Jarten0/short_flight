@@ -10,7 +10,7 @@ NPCData(
         can_interact: CollisionLayers(15),
     )),
     stats: Some((
-        Health(20),
+        Health(hp: 20),
         Damage(5),
     )),
     spritesheet: AnimationSpritesheet(
@@ -24,16 +24,18 @@ NPCData(
         // Fainted,
         ],
         sprite_size: UVec2(
-            x: 32,
-            y: 32,
+            32,
+            32,
         ),
         data: {
-            Idle: AnimationData(
+            Idle: {
+                variant: Idle,
                 frames: 2,
-            ),
-            Walking: AnimationData(
+            },
+            Walking: {
+                variant: Walking,
                 frames: 2,
-            ), // AttackSwipe: AnimationData(
+            }, // AttackSwipe: AnimationData(
         //     frames: 2,
         // ),
         // AttackTackle: AnimationData(

@@ -1,0 +1,26 @@
+{
+    AttackSwipe: {
+        variant: AttackSwipe,
+        frames: 0,
+    },
+    AttackTackle: {
+        variant: AttackTackle,
+        frames: 0,
+    },
+    Walking: {
+        variant: Walking,
+        frames: 0,
+    },
+    Down: {
+        variant: Down,
+        frames: 0,
+    },
+    Idle: {
+        variant: Idle,
+        frames: 0,
+    },
+    Hurt: {
+        variant: Hurt,
+        frames: 0,
+    },
+}

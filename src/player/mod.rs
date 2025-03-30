@@ -1,5 +1,5 @@
 use crate::assets::AnimationAssets;
-use crate::assets::{AssetStates, RonAssetLoader};
+use crate::assets::{RonAssetLoader, ShortFlightLoadingState};
 use assets::ShayminAssets;
 use bevy::prelude::*;
 use bevy_asset_loader::loading_state::LoadingStateAppExt;
@@ -8,7 +8,7 @@ use bevy_sprite3d::prelude::*;
 use short_flight::animation::AnimType;
 
 mod anim_state;
-mod assets;
+pub mod assets;
 mod physics;
 
 /// Insert into world's that manage client-player state for the silly little goober :3
@@ -22,22 +22,14 @@ impl Plugin for ShayminPlugin {
     fn build(&self, app: &mut App) {
         app.world_mut().spawn(Shaymin);
         app.add_systems(Startup, (setup, physics::setup))
-            .add_systems(OnEnter(AssetStates::Done), insert_assets)
+            .add_systems(OnEnter(ShortFlightLoadingState::Done), insert_assets)
             .add_systems(FixedFirst, physics::update_rigidbodies)
             .add_systems(
                 FixedUpdate,
                 (physics::control_shaymin, anim_state::update_materials).chain(),
             )
             .add_systems(PostUpdate, (physics::draw_colliders).chain())
-            .init_asset::<AnimationAssets>()
-            .register_asset_loader::<RonAssetLoader<AnimationAssets>>(RonAssetLoader::default())
-            .add_loading_state(
-                LoadingState::new(AssetStates::PlayerLoading)
-                    .continue_to_state(AssetStates::Done)
-                    .load_collection::<ShayminAssets>()
-                    .on_failure_continue_to_state(AssetStates::Retry),
-            )
-            .add_systems(OnEnter(AssetStates::Retry), retry);
+            .add_systems(OnEnter(ShortFlightLoadingState::FailState), retry);
     }
 }
 
@@ -81,6 +73,7 @@ fn insert_assets(
 
 /// Runs if any of the assets cannot be loaded
 fn retry(mut commands: Commands, asset_server: Res<AssetServer>) {
+    log::info!("Could not load assets, initializing failsafe");
     let shaymin = asset_server.load::<Image>("shaymin/shaymin.png");
     let asset = {
         let hash_map = [
@@ -96,11 +89,10 @@ fn retry(mut commands: Commands, asset_server: Res<AssetServer>) {
         .collect();
         AnimationAssets(hash_map)
     };
-    short_flight::serialize_to_file(&asset, "assets/shaymin/animations.ron");
     let animations = asset_server.add(asset);
     commands.insert_resource(ShayminAssets {
         shaymin,
         animations,
     });
-    commands.set_state(AssetStates::Done);
+    // commands.set_state(ShortFlightLoadingState::Done);
 }

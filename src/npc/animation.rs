@@ -30,6 +30,7 @@ impl NPCAnimation {
     pub fn update(&mut self, delta: f32) {
         if self.spritesheet[self.current].process_timer(&mut self.frame, delta) {
             self.current = AnimType::Idle;
+            self.frame = 0.0;
         };
     }
 

@@ -99,9 +99,9 @@ impl AnimationData {
     pub fn process_timer(&self, frame: &mut f32, delta: f32) -> bool {
         *frame += delta;
 
-        if self.variant.use_timer() && *frame >= self.frames as f32 {
+        if *frame >= self.frames as f32 {
             *frame = 0.0;
-            return true;
+            return self.variant.use_timer();
         }
 
         return false;

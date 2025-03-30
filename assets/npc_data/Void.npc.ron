@@ -1,0 +1,25 @@
+NPCData(
+    display_name: "Void",
+    info: Enemy(),
+    collider: Some(Collider(
+        dynamic: false,
+        shape: Circle(
+            radius: 1.0,
+        ),
+        layers: CollisionLayers(1),
+        can_interact: CollisionLayers(1),
+    )),
+    stats: Some((Health(
+        hp: 1,
+    ), Damage(1))),
+    spritesheet: AnimationSpritesheet(
+        animations: [],
+        sprite_size: UVec2(0, 0),
+        data: {
+            Idle: {
+                variant: Idle,
+                frames: 2,
+            },
+        },
+    ),
+)

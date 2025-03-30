@@ -567,8 +567,8 @@ fn adjust_tiles_via_keystrokes(
             transform.translation.y.round(),
             transform.translation.z,
         ),
-        UVec3::new(40, 2, 40),
-        Vec3::ONE * 4.,
+        UVec3::new(40, 1, 40),
+        Vec3::ONE,
         palettes::basic::RED,
     );
 

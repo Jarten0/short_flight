@@ -4,6 +4,9 @@ use bevy::ecs::system::SystemState;
 use bevy::prelude::*;
 use bevy_sprite3d::{Sprite3d, Sprite3dBuilder, Sprite3dParams};
 
+/// Spawns an NPC with the given NPC asset data
+///
+/// Will panic if run before the assets can be loaded during [`PreStartup`] in [`crate::npc::file::load_npcs`]
 pub struct SpawnNPC {
     pub npc_id: NPC,
     pub position: Vec3,
@@ -15,13 +18,22 @@ impl Command for SpawnNPC {
         let npc_almanac = world.resource::<NPCAlmanac>();
         let npc_data = world.resource::<Assets<NPCData>>();
 
-        let (data_handle, image_handle) = &npc_almanac.0.get(&self.npc_id).unwrap_or_else(|| {
+        let data_handle = npc_almanac.data_files.get(&self.npc_id).unwrap_or_else(|| {
             panic!(
                 "Could not find NPC almanac entry for {}",
                 self.npc_id as isize
             );
         });
-        let image_handle = image_handle.clone();
+        let image_handle = npc_almanac
+            .image_files
+            .get(&self.npc_id)
+            .unwrap_or_else(|| {
+                panic!(
+                    "Could not find NPC almanac entry for {}",
+                    self.npc_id as isize
+                );
+            })
+            .clone();
 
         let data = npc_data
             .get(data_handle)
@@ -36,7 +48,8 @@ impl Command for SpawnNPC {
         let required = (
             self.npc_id,
             data.info.clone(),
-            Transform::from_translation(self.position),
+            Transform::from_translation(self.position + Vec3::new(0., 0.2, 0.))
+                .with_rotation(Quat::from_rotation_x(f32::to_radians(-90.0))),
             Name::new(self.name.clone().unwrap_or(data.display_name.clone())),
         );
         let stats = (
@@ -58,12 +71,14 @@ impl Command for SpawnNPC {
             image: image_handle,
             pixels_per_metre: 32.0,
             pivot: None,
-            alpha_mode: AlphaMode::default(),
+            alpha_mode: AlphaMode::Mask(0.5),
             unlit: false,
             double_sided: true,
             emissive: LinearRgba::BLACK,
         }
         .bundle_with_atlas(&mut system_state.get_mut(world), atlas);
+
+        system_state.apply(world);
 
         drop(data);
 
@@ -84,7 +99,11 @@ impl Command for SpawnNPC {
             }
         };
 
-        log::info!("Spawned NPC: {}", self.name.unwrap_or(data.display_name.clone())
+        let id = entity.id();
 
+        log::info!(
+            "Spawned NPC: {}",
+            world.query::<&Name>().get(world, id).unwrap().as_str()
+        );
     }
 }

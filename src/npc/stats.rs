@@ -18,6 +18,16 @@ pub struct Health {
     currently_handling: bool,
 }
 
+impl Health {
+    pub fn new(hp: u64) -> Self {
+        Self {
+            hp,
+            do_not_despawn_on_faint: false,
+            currently_handling: false,
+        }
+    }
+}
+
 /// Event is sent when an entity reaches 0 hp.
 ///
 /// Should be accounted for when writing enemy AI logic.

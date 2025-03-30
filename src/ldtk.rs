@@ -1,16 +1,23 @@
+use crate::assets::ShortFlightLoadingState;
+use crate::npc;
+use crate::npc::NPC;
+use bevy::color::palettes;
+use bevy::color::palettes::tailwind::RED_500;
+use bevy::ecs::system::SystemState;
 use bevy::prelude::Asset;
 use bevy::{asset::io::Reader, reflect::TypePath};
 use bevy::{
     asset::{AssetLoader, AssetPath, LoadContext},
     prelude::*,
 };
+use bevy_asset_loader::asset_collection::AssetCollection;
 use bevy_ecs_tilemap::map::TilemapType;
-use bevy_ecs_tilemap::tiles::TileFlip;
 use bevy_ecs_tilemap::{
     map::{TilemapId, TilemapSize, TilemapTexture, TilemapTileSize},
-    tiles::{TileBundle, TilePos, TileStorage, TileTextureIndex},
+    tiles::{TilePos, TileStorage, TileTextureIndex},
     TilemapBundle,
 };
+use bevy_picking::pointer::PointerInteraction;
 use bitflags::bitflags;
 use serde::{Deserialize, Serialize};
 use short_flight::collision::{Collider, ColliderShape, CollisionLayers, StaticCollision, ZHitbox};
@@ -18,8 +25,11 @@ use short_flight::deserialize_file;
 use std::{collections::HashMap, io::ErrorKind};
 use thiserror::Error;
 
-use crate::npc;
-use crate::npc::{commands::SpawnNPC, NPC};
+#[derive(AssetCollection, Resource)]
+pub struct MapAssets {
+    #[asset(path = "tilemap.ldtk")]
+    pub map: Handle<LdtkMap>,
+}
 
 /// Initialized differently from the LDTK map data, this determines how high up the object is.
 // There's no settlement on if the value will be represented as an `i64` in the future
@@ -100,8 +110,16 @@ pub struct LdtkPlugin;
 impl Plugin for LdtkPlugin {
     fn build(&self, app: &mut App) {
         app.init_asset::<LdtkMap>()
+            .add_event::<SpawnMeshEvent>()
             .register_asset_loader(LdtkLoader)
-            .add_systems(Update, process_loaded_tile_maps);
+            .add_systems(
+                Update,
+                (
+                    process_loaded_tile_maps.run_if(on_event::<AssetEvent<LdtkMap>>),
+                    draw_mesh_intersections,
+                ),
+            )
+            .add_systems(OnEnter(ShortFlightLoadingState::Done), deferred_mesh_spawn);
     }
 }
 
@@ -111,12 +129,12 @@ pub struct LdtkMap {
     pub tilesets: HashMap<i64, Handle<Image>>,
 }
 
-#[derive(Default, Component)]
+#[derive(Default, Component, Clone)]
 pub struct LdtkMapConfig {
     pub selected_level: usize,
 }
 
-#[derive(Default, Component)]
+#[derive(Default, Component, Clone)]
 pub struct LdtkMapHandle(pub Handle<LdtkMap>);
 
 #[derive(Default, Bundle)]
@@ -125,6 +143,56 @@ pub struct LdtkMapBundle {
     pub ldtk_map_config: LdtkMapConfig,
     pub transform: Transform,
     pub global_transform: GlobalTransform,
+}
+
+fn deferred_mesh_spawn(mut commands: Commands, map: Res<MapAssets>) {
+    log::info!("Spawned map");
+    let ldtk_map = LdtkMapHandle(map.map.clone());
+    let ldtk_map_config = LdtkMapConfig { selected_level: 1 };
+    commands.spawn((
+        LdtkMapBundle {
+            ldtk_map: ldtk_map.clone(),
+            ldtk_map_config: ldtk_map_config.clone(),
+            transform: Transform::from_xyz(0.0, 0.0, 0.0),
+            global_transform: GlobalTransform::default(),
+        },
+        Name::new("LdtkMap"),
+    ));
+    commands.queue(move |world: &mut World| {
+        let mut system_state = SystemState::<(
+            Commands,
+            EventReader<AssetEvent<LdtkMap>>,
+            Res<Assets<LdtkMap>>,
+            Query<(Entity, &LdtkMapHandle, &LdtkMapConfig)>,
+        )>::new(world);
+
+        let (mut commands, map_events, maps, query): (
+            Commands<'_, '_>,
+            EventReader<'_, '_, AssetEvent<LdtkMap>>,
+            Res<'_, Assets<LdtkMap>>,
+            Query<'_, '_, (Entity, &LdtkMapHandle, &LdtkMapConfig)>,
+        ) = system_state.get(world);
+
+        spawn_map(&mut commands, &maps, &ldtk_map, &ldtk_map_config);
+
+        system_state.apply(world);
+    });
+}
+
+/// A system that draws hit indicators for every pointer.
+fn draw_mesh_intersections(pointers: Query<&PointerInteraction>, mut gizmos: Gizmos) {
+    for (point, normal) in pointers
+        .iter()
+        .filter_map(|interaction| interaction.get_nearest_hit())
+        .filter_map(|(_entity, hit)| hit.position.zip(hit.normal))
+    {
+        gizmos.sphere(point, 0.05, palettes::tailwind::RED_500);
+        gizmos.arrow(
+            point,
+            point + normal.normalize() * 0.5,
+            palettes::tailwind::PINK_100,
+        );
+    }
 }
 
 #[derive(Debug, Event, Reflect, Clone)]
@@ -200,63 +268,61 @@ pub fn process_loaded_tile_maps(
     query: Query<(Entity, &LdtkMapHandle, &LdtkMapConfig)>,
     // new_maps: Query<&LdtkMapHandle, Added<LdtkMapHandle>>,
 ) {
-    // log::info!("Begun processing loaded tile maps");
-    let mut changed_maps = Vec::<AssetId<LdtkMap>>::default();
+    log::info!("Begun processing loaded tile maps");
+    let mut event_maps = Vec::<AssetId<LdtkMap>>::default();
     for event in map_events.read() {
         match event {
             AssetEvent::Added { id } => {
                 log::info!("Map added! {}", id);
-                changed_maps.push(*id);
+                event_maps.push(*id);
             }
             AssetEvent::Modified { id } => {
                 log::info!("Map changed! {}", id);
-                changed_maps.push(*id);
+                event_maps.push(*id);
             }
             AssetEvent::Removed { id } => {
                 log::info!("Map removed! {}", id);
                 // if mesh was modified and removed in the same update, ignore the modification
                 // events are ordered so future modification events are ok
-                changed_maps.retain(|changed_handle| changed_handle == id);
+                event_maps.retain(|changed_handle| changed_handle == id);
             }
             _ => continue,
         }
     }
     // log::info!("Events iterated");
 
-    // If we have new map entities, add them to the changed_maps list
-    // let mut other: Vec<AssetId<LdtkMap>> = new_maps
-    //     .iter()
-    //     .map(|new_map_handle| new_map_handle.0.id())
-    //     .collect();
-    // changed_maps.append(&mut other);
-
-    let changed_maps = changed_maps.iter().filter_map(|changed_map| {
+    let changed_maps = event_maps.into_iter().filter_map(|changed_map| {
         query
             .iter()
             // only deal with currently changed map
-            .find(|a| a.1 .0.id() == *changed_map)
+            .find(|map_query| map_query.1 .0.id() == changed_map)
             .map(|bundle| (changed_map, bundle))
     });
 
     // log::info!("{} Events iterated", changed_maps.clone().count());
 
     for (changed_map, (entity, map_handle, map_config)) in changed_maps {
-        log::info!("Processing changed map!");
-        assert!(
-            map_handle.0.id() == *changed_map,
-            "Invalid deviation from the example"
-        );
-
-        let Some(ldtk_map) = maps.get(&map_handle.0) else {
-            log::error!("Could not retrieve asset {:?}", map_handle.0);
-            return;
-        };
-
         // Despawn all existing tilemaps for this LdtkMap
         commands.entity(entity).despawn_descendants();
 
-        spawn_map_components(&mut commands, ldtk_map, map_config);
+        spawn_map(&mut commands, &maps, map_handle, map_config);
     }
+}
+
+fn spawn_map(
+    commands: &mut Commands,
+    maps: &Res<Assets<LdtkMap>>,
+    map_handle: &LdtkMapHandle,
+    map_config: &LdtkMapConfig,
+) {
+    log::info!("Processing changed map!");
+
+    let Some(ldtk_map) = maps.get(&map_handle.0) else {
+        log::error!("Could not retrieve asset {:?}", map_handle.0);
+        return;
+    };
+
+    spawn_map_components(commands, ldtk_map, map_config);
 }
 
 fn spawn_map_components(commands: &mut Commands, ldtk_map: &LdtkMap, map_config: &LdtkMapConfig) {
@@ -293,15 +359,27 @@ fn spawn_map_components(commands: &mut Commands, ldtk_map: &LdtkMap, map_config:
         y: map_tile_count_y,
     };
 
-    // We will create a tilemap for each layer in the following loop
-    for (layer_id, layer) in level
-        .layer_instances
-        .as_ref()
-        .unwrap()
+    let level_layer_instances = ldtk_map
+        .project
+        .levels
         .iter()
-        .rev()
-        .enumerate()
-    {
+        .filter_map(|value| value.layer_instances.as_ref());
+
+    // We will create a tilemap for each layer in the following loop
+    for (layer_id, layer) in level_layer_instances.flatten().rev().enumerate() {
+        let level = ldtk_map
+            .project
+            .levels
+            .iter()
+            .find(|level| level.uid == layer.level_id)
+            .unwrap();
+
+        let tilemap_transform = Transform::from_xyz(
+            level.world_x as f32 / size.x as f32,
+            0.0,
+            level.world_y as f32 / size.y as f32,
+        );
+
         // Instantiate layer entities here
         for entity in layer.entity_instances.iter() {
             if entity.tags.contains(&"NPC".to_string()) {
@@ -314,18 +392,27 @@ fn spawn_map_components(commands: &mut Commands, ldtk_map: &LdtkMap, map_config:
                     .as_ref()
                     .expect("No value found for NPC_ID")
                     .as_u64()
-                    .unwrap("Expected unsigned integer for NPC_ID, found something else");
+                    .expect("Expected unsigned integer for NPC_ID, found something else");
 
                 let name = entity
                     .field_instances
                     .iter()
                     .find(|field| field.identifier == "Name")
-                    .map(|field| field.value.as_ref().unwrap_or("[VOIDED]").as_str().expect("Expected string value for Name, found something else"));
+                    .map(|field| {
+                        field
+                            .value
+                            .as_ref()
+                            .unwrap_or(&serde_json::Value::String("[VOIDED]".to_string()))
+                            .as_str()
+                            .expect("Expected string value for Name, found something else")
+                            .to_string()
+                    });
 
                 commands.queue(npc::commands::SpawnNPC {
                     npc_id: NPC::try_from(id as usize).unwrap(),
-                    position: Vec3::new(entity.px[0] as f32 / 32., 0.0, entity.px[1] as f32 / 32.),
-                    name
+                    position: Vec3::new(entity.px[0] as f32 / 32., 0.0, entity.px[1] as f32 / 32.)
+                        + tilemap_transform.translation,
+                    name,
                 });
             }
         }
@@ -413,11 +500,7 @@ fn spawn_map_components(commands: &mut Commands, ldtk_map: &LdtkMap, map_config:
                     storage,
                     texture: TilemapTexture::Single(texture),
                     tile_size,
-                    transform: Transform::from_xyz(
-                        level.world_x as f32 / size.x as f32,
-                        0.0,
-                        level.world_y as f32 / size.y as f32,
-                    ),
+                    transform: tilemap_transform,
                     ..default()
                 },
                 Name::new(format!("Tilemap #{}", layer_id)),

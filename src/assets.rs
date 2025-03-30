@@ -1,9 +1,11 @@
+use crate::{ldtk, npc, player};
 use bevy::asset::saver::{AssetSaver, SavedAsset};
 use bevy::asset::{AssetLoader, AsyncWriteExt};
 use bevy::prelude::*;
 use bevy_asset_loader::prelude::*;
+use ron::ser::PrettyConfig;
 use serde::{Deserialize, Serialize};
-use short_flight::animation::{AnimType, AnimationData};
+use short_flight::animation::{self, AnimType, AnimationData};
 use std::collections::HashMap;
 use std::marker::PhantomData;
 use thiserror::Error;
@@ -12,36 +14,76 @@ pub struct AssetsPlugin;
 
 impl Plugin for AssetsPlugin {
     fn build(&self, app: &mut App) {
-        app.init_state::<AssetStates>()
-        .init_asset::<AnimationSpritesheet>()
-            // .add_loading_state(
-            //     LoadingState::new(AssetStates::First).continue_to_state(AssetStates::PlayerLoading), // .load_collection::<shaymin::SpritesCollection>(),
-            // )
-            // .init_asset::<AnimationData>()
-            // .register_asset_loader::<RonAssetLoader<AnimationData>>(RonAssetLoader::default())
-            ;
+        app.init_state::<ShortFlightLoadingState>()
+            .init_asset::<AnimationAssets>()
+            .init_asset::<AnimationSpritesheet>()
+            .init_asset::<npc::file::NPCData>()
+            .register_asset_loader(RonAssetLoader::<npc::file::NPCData>::with_extension(&[
+                "npc.ron",
+            ]))
+            .register_asset_loader(RonAssetLoader::<AnimationAssets>::with_extension(&[
+                "anim.ron",
+            ]))
+            .add_loading_state(
+                LoadingState::new(ShortFlightLoadingState::First)
+                    .load_collection::<ldtk::MapAssets>()
+                    .on_failure_continue_to_state(ShortFlightLoadingState::FailState)
+                    .continue_to_state(ShortFlightLoadingState::PlayerLoading),
+            )
+            .add_loading_state(
+                LoadingState::new(ShortFlightLoadingState::PlayerLoading)
+                    .load_collection::<player::assets::ShayminAssets>()
+                    .on_failure_continue_to_state(ShortFlightLoadingState::FailState)
+                    .continue_to_state(ShortFlightLoadingState::LoadNPCAssets),
+            )
+            .add_loading_state(
+                LoadingState::new(ShortFlightLoadingState::LoadNPCAssets)
+                    .load_collection::<npc::file::NPCAlmanac>()
+                    .on_failure_continue_to_state(ShortFlightLoadingState::FailState)
+                    .continue_to_state(ShortFlightLoadingState::SpawnWithAssets),
+            )
+            .add_loading_state(
+                LoadingState::new(ShortFlightLoadingState::SpawnWithAssets)
+                    .on_failure_continue_to_state(ShortFlightLoadingState::FailState)
+                    .continue_to_state(ShortFlightLoadingState::Done),
+            )
+            .add_loading_state(LoadingState::new(ShortFlightLoadingState::FailState));
+        // .add_loading_state(LoadingState::new(ShortFlightLoadingState::Done))
     }
 }
 
 #[derive(Debug, States, PartialEq, Eq, Default, Hash, Clone)]
-pub enum AssetStates {
+pub enum ShortFlightLoadingState {
+    FailState,
     Retry,
     #[default]
-    // First,
+    First,
     PlayerLoading,
-    NPCsLoading,
+    LoadNPCAssets,
+    SpawnWithAssets,
     Done,
 }
 
 #[derive(Debug)]
 pub(crate) struct RonAssetLoader<T> {
     marker: PhantomData<T>,
+    extension: &'static [&'static str],
 }
 
-impl<T: Default> Default for RonAssetLoader<T> {
-    fn default() -> Self {
+// impl<T: Default> Default for RonAssetLoader<T> {
+//     fn default() -> Self {
+//         Self {
+//             marker: Default::default(),
+//             extension: &["ron"],
+//         }
+//     }
+// }
+
+impl<T> RonAssetLoader<T> {
+    fn with_extension(extension: &'static [&'static str]) -> RonAssetLoader<T> {
         Self {
             marker: Default::default(),
+            extension,
         }
     }
 }
@@ -54,27 +96,6 @@ pub(crate) enum RonAssetLoaderError {
     Serialize(#[from] ron::error::Error),
     #[error("Could not deserialize RON file: {0}")]
     Deserialize(#[from] ron::error::SpannedError),
-}
-
-impl<T> AssetSaver for RonAssetLoader<T>
-where
-    T: bevy::prelude::Asset + for<'a> serde::Deserialize<'a> + serde::Serialize,
-{
-    type Asset = T;
-    type Settings = ();
-    type OutputLoader = Self;
-    type Error = RonAssetLoaderError;
-
-    async fn save(
-        &self,
-        writer: &mut bevy::asset::io::Writer,
-        asset: SavedAsset<'_, Self::Asset>,
-        _settings: &Self::Settings,
-    ) -> Result<(), RonAssetLoaderError> {
-        let buf = ron::to_string(asset.get())?;
-        writer.write_all(buf.as_bytes()).await?;
-        Ok(())
-    }
 }
 
 impl<T> AssetLoader for RonAssetLoader<T>
@@ -92,15 +113,14 @@ where
         _load_context: &mut bevy::asset::LoadContext<'_>,
     ) -> Result<Self::Asset, Self::Error> {
         let mut bytes = Vec::new();
+
         reader.read_to_end(&mut bytes).await?;
 
-        let deserialized = ron::from_str::<T>(&String::from_utf8(bytes).unwrap())?;
-
-        Ok(deserialized)
+        Ok(ron::de::from_bytes(&bytes)?)
     }
 
     fn extensions(&self) -> &[&str] {
-        &["ron"]
+        self.extension
     }
 }
 
@@ -113,7 +133,7 @@ pub(super) struct AnimationAssets(pub HashMap<AnimType, AnimationData>);
 pub(super) struct AnimationSpritesheet {
     pub animations: Vec<AnimType>,
     pub sprite_size: UVec2,
-    data: AnimationAssets,
+    pub data: AnimationAssets,
     #[serde(skip)]
     pub atlas: Option<Handle<TextureAtlasLayout>>,
     #[serde(skip)]

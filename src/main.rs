@@ -2,11 +2,11 @@
 #![feature(generic_arg_infer)]
 
 use crate::ldtk::{LdtkMapBundle, SpawnMeshEvent};
+use assets::ShortFlightLoadingState;
 use bevy::color::palettes::tailwind::{PINK_100, RED_500};
 use bevy::prelude::*;
 use bevy::remote::http::RemoteHttpPlugin;
 use bevy::remote::RemotePlugin;
-use bevy_editor_cam::prelude::*;
 use bevy_picking::pointer::PointerInteraction;
 use std::f32::consts::PI;
 
@@ -38,9 +38,7 @@ fn main() {
         .add_plugins(RemoteHttpPlugin::default())
         // core game
         .add_systems(PreStartup, setup)
-        .add_systems(Update, deferred_mesh_spawn)
-        .add_systems(Update, (draw_mesh_intersections, toggle_projection))
-        .add_event::<SpawnMeshEvent>()
+        .add_systems(Update, toggle_projection)
         .run();
 }
 
@@ -91,41 +89,5 @@ fn toggle_projection(mut projection: Query<&mut Projection>, kb: Res<ButtonInput
                 }),
             }
         }
-    }
-}
-
-fn deferred_mesh_spawn(
-    mut commands: Commands,
-    asset_server: Res<AssetServer>,
-    query: Query<&ldtk::LdtkMapHandle>,
-) {
-    let handle = asset_server
-        .get_handle("tilemap.ldtk")
-        .unwrap_or_else(|| asset_server.load::<ldtk::LdtkMap>("tilemap.ldtk"));
-    for item in query.iter() {
-        if item.0 == handle {
-            return;
-        }
-    }
-    commands.spawn((
-        LdtkMapBundle {
-            ldtk_map: ldtk::LdtkMapHandle(handle),
-            ldtk_map_config: ldtk::LdtkMapConfig { selected_level: 0 },
-            transform: Transform::from_xyz(0.0, 0.0, 0.0),
-            global_transform: GlobalTransform::default(),
-        },
-        Name::new("LdtkMap"),
-    ));
-}
-
-/// A system that draws hit indicators for every pointer.
-fn draw_mesh_intersections(pointers: Query<&PointerInteraction>, mut gizmos: Gizmos) {
-    for (point, normal) in pointers
-        .iter()
-        .filter_map(|interaction| interaction.get_nearest_hit())
-        .filter_map(|(_entity, hit)| hit.position.zip(hit.normal))
-    {
-        gizmos.sphere(point, 0.05, RED_500);
-        gizmos.arrow(point, point + normal.normalize() * 0.5, PINK_100);
     }
 }
