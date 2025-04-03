@@ -21,9 +21,7 @@ pub fn setup(shaymin: Client, mut commands: Commands) {
     commands.entity(*shaymin).insert((
         Collider {
             dynamic: true,
-            shape: ColliderShape::Circle {
-                radius: 20. / 32. / 2.,
-            },
+            shape: ColliderShape::Circle(20. / 32. / 2.),
             layers: CollisionLayers::NPC,
             can_interact: CollisionLayers::NPC
                 | CollisionLayers::Projectile
@@ -130,7 +128,7 @@ pub fn draw_colliders(
         let mut translation2 = transform.translation();
         translation2.y += zhitbox.y_tolerance;
 
-        if let ColliderShape::Circle { radius } = collider.shape {
+        if let ColliderShape::Circle(radius) = collider.shape {
             gizmos.circle(
                 Isometry3d::new(translation, Quat::from_rotation_x(f32::to_radians(90.0))),
                 radius,

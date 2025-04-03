@@ -13,8 +13,10 @@ use std::f32::consts::PI;
 mod assets;
 mod ldtk;
 mod mesh;
+mod moves;
 mod npc;
 mod player;
+mod projectile;
 
 fn main() {
     App::new()

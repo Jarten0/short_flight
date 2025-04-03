@@ -5,6 +5,7 @@ use std::fs::File;
 use std::io::{Read, Write};
 use std::path::PathBuf;
 
+use enum_iterator::Sequence;
 use serde::{Deserialize, Serialize};
 
 pub mod animation;
@@ -90,4 +91,61 @@ pub fn serialize_to_file(serializable: impl Serialize, path: &str) -> bool {
         return false;
     };
     true
+}
+
+pub fn from_asset_path<T>(path: &bevy::asset::AssetPath<'_>) -> T
+where
+    T: Sequence + bevy::reflect::Enum,
+{
+    let binding = std::path::PathBuf::from(
+        path.path()
+            .file_stem()
+            .unwrap_or_else(|| panic!("Could not get the file stem for {}", path))
+            .to_str()
+            .unwrap_or_else(|| panic!("Could not convert {} to unicode", path)),
+    );
+    let stem = binding
+        .file_stem()
+        .unwrap_or_else(|| panic!("Could not get the file stem for {}", path))
+        .to_str()
+        .unwrap_or_else(|| panic!("Could not convert {} to unicode", path));
+    enum_iterator::all::<T>()
+        .find(|variant| variant.variant_name() == stem)
+        .unwrap_or_else(|| panic!("Could not find a variant for {} [path:{}]", stem, path))
+}
+
+pub fn try_from_asset_path<T>(path: &bevy::asset::AssetPath<'_>) -> Option<T>
+where
+    T: Sequence + bevy::reflect::Enum,
+{
+    let binding = std::path::PathBuf::from(
+        path.path()
+            .file_stem()
+            .or_else(|| {
+                log::error!("Could not get the file stem for {}", path);
+                None
+            })?
+            .to_str()
+            .or_else(|| {
+                log::error!("Could not convert {} to unicode", path);
+                None
+            })?,
+    );
+    let stem = binding
+        .file_stem()
+        .or_else(|| {
+            log::error!("Could not get the file stem for {}", path);
+            None
+        })?
+        .to_str()
+        .or_else(|| {
+            log::error!("Could not convert {} to unicode", path);
+            None
+        })?;
+    enum_iterator::all::<T>()
+        .find(|variant| variant.variant_name() == stem)
+        .or_else(|| {
+            log::error!("Could not find a variant for {} [path:{}]", stem, path);
+            None
+        })
 }

@@ -1,5 +1,7 @@
+use bevy::asset::RenderAssetUsages;
 use bevy::color::palettes;
 use bevy::prelude::*;
+use bevy::render::mesh::{MeshVertexAttribute, PrimitiveTopology};
 use bitflags::bitflags;
 use serde::{Deserialize, Serialize};
 
@@ -72,7 +74,7 @@ pub struct DynamicCollision {}
 #[derive(Debug, Reflect, Component, Default)]
 pub struct StaticCollision {}
 
-#[derive(Debug, Reflect, Component, Serialize, Deserialize, Clone)]
+#[derive(Debug, Reflect, Component, Clone, Serialize, Deserialize)]
 #[require(ZHitbox, Transform)]
 pub struct Collider {
     pub dynamic: bool,
@@ -120,10 +122,15 @@ pub enum ColliderShape {
     /// Transform rotation will *not* apply. it is always axis-aligned for ease of collision checking.
     Rect(Rect),
     /// The easiest shape to calculate collisions with, is useful for general object shapes.
-    Circle { radius: f32 },
-    /// the expensive but most customizable option, and the only one that makes use of the asset system
-    #[serde(skip)]
-    Mesh(Handle<Mesh>),
+    Circle(f32),
+    /// the expensive but most customizable option
+    Mesh(Vec<Vec2>),
+}
+
+impl Default for ColliderShape {
+    fn default() -> Self {
+        Self::Circle(0.0)
+    }
 }
 
 #[derive(Debug, Event, Clone)]
@@ -164,7 +171,7 @@ fn query_overlaps(
                             let rect2 = offset_rect(col_rect, transform2);
                             !rect.intersect(rect2).is_empty()
                         }
-                        ColliderShape::Circle { radius } => {
+                        ColliderShape::Circle(radius) => {
                             let p = transform2.translation().xz();
 
                             let radius2 = bounded_difference(rect, p).length_squared();
@@ -192,7 +199,7 @@ fn query_overlaps(
                     }
                 }
             }
-            ColliderShape::Circle { radius } => {
+            ColliderShape::Circle(radius) => {
                 let p = transform.translation().xz();
 
                 const DRAW_GIZMOS: bool = false;
@@ -246,7 +253,7 @@ fn query_overlaps(
                                 false
                             }
                         }
-                        ColliderShape::Circle { radius: radius2 } => {
+                        ColliderShape::Circle(radius2) => {
                             let p2 = transform2.translation().xz();
 
                             let distance_sq = p.distance_squared(p2);

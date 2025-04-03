@@ -3,6 +3,7 @@ use super::{animation, file::NPCAlmanac, file::NPCData, NPCInfo, NPC};
 use bevy::ecs::system::SystemState;
 use bevy::prelude::*;
 use bevy_sprite3d::{Sprite3d, Sprite3dBuilder, Sprite3dParams};
+use short_flight::collision::{Collider, ColliderShape, CollisionLayers};
 
 /// Spawns an NPC with the given NPC asset data
 ///
@@ -56,7 +57,7 @@ impl Command for SpawnNPC {
             data.stats.clone().unwrap(),
             NPCAnimation::new(data.spritesheet.clone()),
         );
-        let collider = data.collider.clone();
+        let collider_shape = data.collider.clone();
         let atlas = TextureAtlas {
             layout: data.spritesheet.atlas.clone().unwrap(),
             index: 0,
@@ -84,17 +85,24 @@ impl Command for SpawnNPC {
 
         let mut entity = world.spawn((required, sprite_3d_bundle));
 
-        if let Some(collider) = collider {
-            entity.insert(collider);
+        if let Some(shape) = collider_shape {
+            entity.insert(Collider {
+                dynamic: true,
+                shape,
+                layers: CollisionLayers::NPC,
+                can_interact: CollisionLayers::Wall
+                    | CollisionLayers::NPC
+                    | CollisionLayers::Projectile,
+            });
         }
 
         match npcinfo {
             NPCInfo::None => (),
             NPCInfo::Silent => (),
-            NPCInfo::Enemy {} => {
+            NPCInfo::Enemy { .. } => {
                 entity.insert(stats);
             }
-            NPCInfo::Team => {
+            NPCInfo::Team { .. } => {
                 entity.insert(stats);
             }
         };

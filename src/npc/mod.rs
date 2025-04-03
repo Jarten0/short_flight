@@ -24,6 +24,7 @@ impl Plugin for NPCPlugin {
                 file::validate_npc_data,
             )
             .add_systems(PreUpdate, animation::update_sprite_timer)
+            .add_systems(FixedUpdate, ai::run_enemy_npc_ai)
             .add_systems(PostUpdate, animation::update_npc_sprites);
     }
 }
@@ -43,21 +44,7 @@ pub enum NPC {
 
 impl MapKey for NPC {
     fn from_asset_path(path: &bevy::asset::AssetPath) -> Self {
-        let binding = std::path::PathBuf::from(
-            path.path()
-                .file_stem()
-                .unwrap_or_else(|| panic!("Could not get the file stem for {}", path))
-                .to_str()
-                .unwrap_or_else(|| panic!("Could not convert {} to unicode", path)),
-        );
-        let stem = binding
-            .file_stem()
-            .unwrap_or_else(|| panic!("Could not get the file stem for {}", path))
-            .to_str()
-            .unwrap_or_else(|| panic!("Could not convert {} to unicode", path));
-        enum_iterator::all::<Self>()
-            .find(|variant| variant.variant_name() == stem)
-            .unwrap_or_else(|| panic!("Could not find an NPC variant for {} [path:{}]", stem, path))
+        short_flight::from_asset_path(path)
     }
 }
 
@@ -74,14 +61,14 @@ impl TryFrom<usize> for NPC {
 
 /// Marks what kind of NPC this is
 #[derive(Debug, Component, Default, Reflect, Clone, Serialize, Deserialize)]
-#[require(NPC)]
 pub enum NPCInfo {
     /// This NPC does no kind of in-world interaction.
     #[default]
     None,
     /// This NPC can be collided with, but does nothing.
     Silent,
-    /// This NPC can deal damage to the player
+    /// This NPC can deal damage to the player, and can draw aggro from the player's team.
     Enemy {},
-    Team,
+    /// This is a character that is in the players party, and can draw enemy aggro.
+    Team {},
 }
