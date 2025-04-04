@@ -76,7 +76,7 @@ pub struct StaticCollision {}
 
 #[derive(Debug, Reflect, Component, Clone, Serialize, Deserialize)]
 #[require(ZHitbox, Transform)]
-pub struct Collider {
+pub struct BasicCollider {
     pub dynamic: bool,
     pub shape: ColliderShape,
     pub layers: CollisionLayers,
@@ -108,13 +108,13 @@ impl Default for CollisionLayers {
 /// These operate in a faux-3d space with the z-position
 ///
 /// Variance exists for the sake of performant collision checking. Most shapes can effectively be represented by a mesh.
-/// But since it's quite the expensive operation to check for, its better to use other means where possible.
-/// The difficulty comes in getting all of these different objects to work with each other.
+/// But it's quite the expensive operation to check for, so its better to use other means where possible.
 ///
-/// Every added variant to Collider shape will need to have interoperability with all of the other types,
+/// Of course, things aren't always easy.
+/// The difficulty comes in when trying to get all of these different shapes to work with each other.
+///
+/// Every added variant to Collider shape will need to have interoperability with all of the other variants,
 /// so being conservative with new additions where possible is ideal.
-///
-/// It's also ideal if this is not directly accessed by user code, for that reason.
 #[derive(Debug, Reflect, Serialize, Deserialize, Clone)]
 pub enum ColliderShape {
     /// A rectangle, second easiest to calculate collisions with. Useful for bounding boxes.
@@ -143,14 +143,14 @@ fn query_overlaps(
     dyn_objects: Query<(
         Entity,
         &GlobalTransform,
-        &Collider,
+        &BasicCollider,
         &ZHitbox,
         &DynamicCollision,
     )>,
     all_objects: Query<(
         Entity,
         &GlobalTransform,
-        &Collider,
+        &BasicCollider,
         &ZHitbox,
         AnyOf<(&DynamicCollision, &StaticCollision)>,
     )>,

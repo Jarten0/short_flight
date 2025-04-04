@@ -9,7 +9,7 @@ use bevy::utils::HashMap;
 use bevy_asset_loader::asset_collection::AssetCollection;
 use serde::Deserialize;
 use serde::Serialize;
-use short_flight::collision::{Collider, ColliderShape};
+use short_flight::collision::{BasicCollider, ColliderShape};
 
 #[derive(Resource, AssetCollection)]
 pub(crate) struct NPCAlmanac {

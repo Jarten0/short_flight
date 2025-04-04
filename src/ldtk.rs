@@ -20,7 +20,7 @@ use bevy_ecs_tilemap::{
 use bevy_picking::pointer::PointerInteraction;
 use bitflags::bitflags;
 use serde::{Deserialize, Serialize};
-use short_flight::collision::{Collider, ColliderShape, CollisionLayers, StaticCollision, ZHitbox};
+use short_flight::collision::{BasicCollider, ColliderShape, CollisionLayers, StaticCollision, ZHitbox};
 use short_flight::deserialize_file;
 use std::{collections::HashMap, io::ErrorKind};
 use thiserror::Error;
@@ -465,7 +465,7 @@ fn spawn_map_components(commands: &mut Commands, ldtk_map: &LdtkMap, map_config:
                 position,
                 TilemapId(map_entity),
                 TileTextureIndex(tile.t as u32),
-                Collider {
+                BasicCollider {
                     dynamic: false,
                     shape: ColliderShape::Rect(Rect {
                         min: Vec2 { x: 0., y: 0. },

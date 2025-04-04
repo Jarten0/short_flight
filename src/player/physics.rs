@@ -7,8 +7,8 @@ use bevy::prelude::*;
 use bevy_ecs_tilemap::tiles::TilePos;
 use short_flight::animation;
 use short_flight::collision::{
-    Collider, ColliderShape, CollisionEvent, CollisionLayers, DynamicCollision, StaticCollision,
-    ZHitbox,
+    BasicCollider, ColliderShape, CollisionEvent, CollisionLayers, DynamicCollision,
+    StaticCollision, ZHitbox,
 };
 
 #[derive(Debug, Component)]
@@ -19,7 +19,7 @@ pub struct ShayminRigidbody {
 
 pub fn setup(shaymin: Client, mut commands: Commands) {
     commands.entity(*shaymin).insert((
-        Collider {
+        BasicCollider {
             dynamic: true,
             shape: ColliderShape::Circle(20. / 32. / 2.),
             layers: CollisionLayers::NPC,
@@ -110,7 +110,7 @@ pub fn manage_movement(
 
 pub fn draw_colliders(
     rigidbodies: Query<(
-        &Collider,
+        &BasicCollider,
         AnyOf<(&DynamicCollision, &StaticCollision)>,
         &GlobalTransform,
         &ZHitbox,
@@ -173,7 +173,7 @@ pub fn on_collision(
 
     mut rigidbody: Query<(&ShayminRigidbody, &GlobalTransform, &mut Transform)>,
     other_col: Query<(
-        &Collider,
+        &BasicCollider,
         &GlobalTransform,
         &ZHitbox,
         Option<((&TilePos, &TileDepth, &TileSlope, &TileFlags))>,

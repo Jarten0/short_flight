@@ -6,7 +6,7 @@ use super::{animation, file::NPCAlmanac, file::NPCData, NPCInfo, NPC};
 use bevy::ecs::system::SystemState;
 use bevy::prelude::*;
 use bevy_sprite3d::{Sprite3d, Sprite3dBuilder, Sprite3dParams};
-use short_flight::collision::{Collider, ColliderShape, CollisionLayers};
+use short_flight::collision::{BasicCollider, ColliderShape, CollisionLayers};
 
 /// Spawns an NPC with the given NPC asset data
 ///
@@ -95,7 +95,7 @@ impl Command for SpawnNPC {
         let mut entity = world.spawn((required, sprite_3d_bundle));
 
         if let Some(shape) = collider_shape {
-            entity.insert(Collider {
+            entity.insert(BasicCollider {
                 dynamic: true,
                 shape,
                 layers: CollisionLayers::NPC,
