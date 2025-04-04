@@ -1,4 +1,4 @@
-use crate::moves::MoveData;
+use crate::moves::interfaces::MoveData;
 use crate::{ldtk, npc, player};
 use bevy::asset::AssetLoader;
 use bevy::prelude::*;
