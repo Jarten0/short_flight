@@ -24,7 +24,10 @@ impl Plugin for NPCPlugin {
                 file::validate_npc_data,
             )
             .add_systems(PreUpdate, animation::update_sprite_timer)
-            .add_systems(FixedUpdate, ai::run_enemy_npc_ai)
+            .add_systems(
+                FixedUpdate,
+                (ai::run_enemy_npc_ai, ai::commit_npc_actions).chain(),
+            )
             .add_systems(PostUpdate, animation::update_npc_sprites);
     }
 }

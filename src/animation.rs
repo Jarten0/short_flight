@@ -41,11 +41,12 @@ impl AnimType {
             _ => false,
         }
     }
-    fn can_move(self) -> bool {
+    /// If `true`, then the NPC cannot perform different actions until this animation is over
+    fn blocks(self) -> bool {
         match self {
-            Idle => true,
-            Walking => true,
-            _ => false,
+            Idle => false,
+            Walking => false,
+            _ => true,
         }
     }
     fn use_timer(self) -> bool {
@@ -63,7 +64,7 @@ impl AnimType {
             _ => 1.0,
         }
     }
-    pub fn new(self) -> AnimationData {
+    pub fn create_data(self) -> AnimationData {
         AnimationData {
             variant: self,
             ..Default::default()
@@ -83,7 +84,7 @@ pub struct AnimationData {
     #[serde(default)]
     #[serde(alias = "can_move")]
     /// set a specific value for can_move for this animation
-    pub can_move_override: Option<bool>,
+    blocked_override: Option<bool>,
 }
 
 impl AnimationData {
@@ -107,10 +108,10 @@ impl AnimationData {
         return false;
     }
     /// returns true if this animation allows the player to move
-    pub fn can_move(&self) -> bool {
-        if let Some(ovr) = self.can_move_override {
+    pub fn is_blocking(&self) -> bool {
+        if let Some(ovr) = self.blocked_override {
             return ovr;
         }
-        return self.variant.can_move();
+        return self.variant.blocks();
     }
 }

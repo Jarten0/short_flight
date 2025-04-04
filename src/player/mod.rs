@@ -77,12 +77,12 @@ fn retry(mut commands: Commands, asset_server: Res<AssetServer>) {
     let shaymin = asset_server.load::<Image>("shaymin/shaymin.png");
     let asset = {
         let hash_map = [
-            AnimType::Idle.new(),
-            AnimType::Walking.new(),
-            AnimType::Hurt.new(),
-            AnimType::Down.new(),
-            AnimType::AttackSwipe.new(),
-            AnimType::AttackTackle.new(),
+            AnimType::Idle.create_data(),
+            AnimType::Walking.create_data(),
+            AnimType::Hurt.create_data(),
+            AnimType::Down.create_data(),
+            AnimType::AttackSwipe.create_data(),
+            AnimType::AttackTackle.create_data(),
         ]
         .into_iter()
         .map(|animation| (animation.variant, animation))

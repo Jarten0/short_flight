@@ -1,3 +1,6 @@
+use crate::npc::ai::{NPCActions, NPCDesicion};
+use crate::player::Shaymin;
+
 use super::animation::NPCAnimation;
 use super::{animation, file::NPCAlmanac, file::NPCData, NPCInfo, NPC};
 use bevy::ecs::system::SystemState;
@@ -56,6 +59,12 @@ impl Command for SpawnNPC {
         let stats = (
             data.stats.clone().unwrap(),
             NPCAnimation::new(data.spritesheet.clone()),
+            NPCActions::Offensive {
+                focus: world
+                    .query_filtered::<Entity, With<Shaymin>>()
+                    .single(&world),
+            },
+            NPCDesicion::default(),
         );
         let collider_shape = data.collider.clone();
         let atlas = TextureAtlas {

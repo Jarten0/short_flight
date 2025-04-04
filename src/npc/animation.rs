@@ -1,8 +1,9 @@
 use super::NPC;
 use crate::assets::AnimationSpritesheet;
 use bevy::prelude::*;
+use bevy::utils::HashMap;
 use bevy_sprite3d::Sprite3d;
-use short_flight::animation::AnimType;
+use short_flight::animation::{AnimType, AnimationData};
 
 /// Handles the state managment of the NPC
 #[derive(Debug, Component)]
@@ -14,6 +15,7 @@ pub(crate) struct NPCAnimation {
     pub frame: f32,
     /// the direction the npc is facing
     pub direction: Vec3,
+    pub animations: HashMap<AnimType, AnimationData>,
     pub spritesheet: AnimationSpritesheet,
 }
 
@@ -22,6 +24,7 @@ impl NPCAnimation {
         Self {
             current: AnimType::Idle,
             direction: Vec3::NEG_Z,
+            animations: spritesheet.data.0.clone(),
             spritesheet,
             frame: 0.0,
         }
@@ -39,6 +42,10 @@ impl NPCAnimation {
             layout: self.spritesheet.atlas.as_ref()?.clone_weak(),
             index: self.frame.floor() as usize,
         })
+    }
+
+    pub fn get_animation_data(&self) -> &AnimationData {
+        &self.spritesheet.data.0[&self.current]
     }
 }
 

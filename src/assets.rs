@@ -1,12 +1,11 @@
+use crate::moves::MoveData;
 use crate::{ldtk, npc, player};
-use bevy::asset::saver::{AssetSaver, SavedAsset};
-use bevy::asset::{AssetLoader, AsyncWriteExt};
+use bevy::asset::AssetLoader;
 use bevy::prelude::*;
+use bevy::utils::HashMap;
 use bevy_asset_loader::prelude::*;
-use ron::ser::PrettyConfig;
 use serde::{Deserialize, Serialize};
-use short_flight::animation::{self, AnimType, AnimationData};
-use std::collections::HashMap;
+use short_flight::animation::{AnimType, AnimationData};
 use std::marker::PhantomData;
 use thiserror::Error;
 
@@ -15,15 +14,17 @@ pub struct AssetsPlugin;
 impl Plugin for AssetsPlugin {
     fn build(&self, app: &mut App) {
         app.init_state::<ShortFlightLoadingState>()
-            .init_asset::<AnimationAssets>()
             .init_asset::<AnimationSpritesheet>()
             .init_asset::<npc::file::NPCData>()
             .register_asset_loader(RonAssetLoader::<npc::file::NPCData>::with_extension(&[
                 "npc.ron",
             ]))
+            .init_asset::<AnimationAssets>()
             .register_asset_loader(RonAssetLoader::<AnimationAssets>::with_extension(&[
                 "anim.ron",
             ]))
+            .init_asset::<MoveData>()
+            .register_asset_loader(RonAssetLoader::<MoveData>::with_extension(&[""]))
             .add_loading_state(
                 LoadingState::new(ShortFlightLoadingState::First)
                     .load_collection::<ldtk::MapAssets>()
@@ -70,17 +71,8 @@ pub(crate) struct RonAssetLoader<T> {
     extension: &'static [&'static str],
 }
 
-// impl<T: Default> Default for RonAssetLoader<T> {
-//     fn default() -> Self {
-//         Self {
-//             marker: Default::default(),
-//             extension: &["ron"],
-//         }
-//     }
-// }
-
 impl<T> RonAssetLoader<T> {
-    fn with_extension(extension: &'static [&'static str]) -> RonAssetLoader<T> {
+    pub fn with_extension(extension: &'static [&'static str]) -> RonAssetLoader<T> {
         Self {
             marker: Default::default(),
             extension,
@@ -138,6 +130,24 @@ pub(super) struct AnimationSpritesheet {
     pub atlas: Option<Handle<TextureAtlasLayout>>,
     #[serde(skip)]
     pub texture: Option<Handle<Image>>,
+}
+
+#[derive(Default)]
+struct AnimationSpritesheetLoader;
+
+impl AssetLoader for AnimationSpritesheetLoader {
+    type Asset = AnimationSpritesheet;
+    type Settings = ();
+    type Error = RonAssetLoaderError;
+
+    async fn load(
+        &self,
+        reader: &mut dyn bevy::asset::io::Reader,
+        settings: &Self::Settings,
+        load_context: &mut bevy::asset::LoadContext<'_>,
+    ) -> Result<Self::Asset, Self::Error> {
+        todo!()
+    }
 }
 
 impl std::ops::Index<AnimType> for AnimationSpritesheet {

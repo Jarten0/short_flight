@@ -56,9 +56,9 @@ pub fn control_shaymin(
     };
 
     let current = anim.current;
-    let data = anim.pool.get_mut(&current).unwrap();
+    let animation = anim.pool.get_mut(&current).unwrap();
 
-    if data.can_move() {
+    if !animation.is_blocking() {
         if let Some(movement) = manage_movement(kb, &mut transform, &delta) {
             anim.direction = movement.xy();
             if current == animation::Idle {

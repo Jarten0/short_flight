@@ -1,14 +1,7 @@
 #![feature(int_roundings)]
 #![feature(generic_arg_infer)]
 
-use crate::ldtk::{LdtkMapBundle, SpawnMeshEvent};
-use assets::ShortFlightLoadingState;
-use bevy::color::palettes::tailwind::{PINK_100, RED_500};
 use bevy::prelude::*;
-use bevy::remote::http::RemoteHttpPlugin;
-use bevy::remote::RemotePlugin;
-use bevy_picking::pointer::PointerInteraction;
-use std::f32::consts::PI;
 
 mod assets;
 mod ldtk;
@@ -36,8 +29,8 @@ fn main() {
         .add_plugins(bevy_inspector_egui::quick::WorldInspectorPlugin::default())
         .add_plugins(bevy_sprite3d::Sprite3dPlugin)
         .add_plugins(bevy_editor_cam::DefaultEditorCamPlugins)
-        .add_plugins(RemotePlugin::default())
-        .add_plugins(RemoteHttpPlugin::default())
+        .add_plugins(bevy::remote::RemotePlugin::default())
+        .add_plugins(bevy::remote::http::RemoteHttpPlugin::default())
         // core game
         .add_systems(PreStartup, setup)
         .add_systems(Update, toggle_projection)
@@ -53,7 +46,7 @@ fn setup(mut commands: Commands) {
         },
         Transform {
             translation: Vec3::new(0.0, 2.0, 0.0),
-            rotation: Quat::from_rotation_x(PI / -1.8),
+            rotation: Quat::from_rotation_x(core::f32::consts::PI / -1.8),
             ..default()
         },
         ShowLightGizmo::default(),

@@ -1,9 +1,8 @@
-use std::collections::HashMap;
-
 use super::assets::ShayminAssets;
 use crate::assets::AnimationAssets;
 use bevy::color::palettes;
 use bevy::prelude::*;
+use bevy::utils::HashMap;
 use bevy_sprite3d::prelude::*;
 use short_flight::animation::{AnimType, AnimationData};
 

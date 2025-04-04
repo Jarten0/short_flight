@@ -1,18 +1,16 @@
 NPCData(
     display_name: "Geodude",
     info: Enemy(),
-    collider: Some(Collider(
-        dynamic: true,
-        shape: Circle(
-            radius: 20.0,
-        ),
-        layers: CollisionLayers(4),
-        can_interact: CollisionLayers(15),
-    )),
+    collider: Some(Circle(
+            20.0,
+        )),
     stats: Some((
         Health(hp: 20),
         Damage(5),
     )),
+    moves: [
+        Tackle
+    ],
     spritesheet: AnimationSpritesheet(
         animations: [
             Idle,
