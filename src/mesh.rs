@@ -1,8 +1,7 @@
-use crate::ldtk::{self, SpawnMeshEvent, TileDepth};
-use crate::ldtk::{TileFlags, TileSlope};
+use crate::ldtk;
+use crate::tile::{TileDepth, TileFlags, TileSlope};
 use bevy::asset::RenderAssetUsages;
 use bevy::color::palettes;
-use bevy::math::bounding::Aabb3d;
 use bevy::prelude::*;
 use bevy::render::mesh::Indices;
 use bevy::render::mesh::PrimitiveTopology;
@@ -123,7 +122,7 @@ impl Plugin for TileMeshManagerPlugin {
 }
 
 fn spawn_massive_tilemap_mesh(
-    mut events: EventReader<SpawnMeshEvent>,
+    mut events: EventReader<ldtk::SpawnMeshEvent>,
     mut commands: Commands,
     asset_server: Res<AssetServer>,
     images: Res<Assets<Image>>,
@@ -366,7 +365,7 @@ fn create_mesh_from_tile_data(
         texture_index,
     } = &mut mesh;
 
-    let (tile_pos, tile_texture, tile_depth, TileSlope(tile_slope), tilemap_id, tile_flags) =
+    let (tile_pos, tile_texture, tile_depth, tile_slope, tilemap_id, tile_flags) =
         tile_data_query.get(tile).ok()?;
 
     *translation = Vec3::new(tile_pos.x as f32, tile_depth.f32(), tile_pos.y as f32);
@@ -400,7 +399,7 @@ fn create_mesh_from_tile_data(
             .unwrap_or(200)
     });
 
-    let (vertex_data, index_data) = calculate_mesh_data(*tile_slope, wall_counts, *tile_flags);
+    let (vertex_data, index_data) = calculate_mesh_data(tile_slope, wall_counts, *tile_flags);
 
     (*vertices, *texture_uvs) = vertex_data.into_iter().unzip();
     *indices = index_data;
@@ -670,7 +669,7 @@ fn call_save_event(kb: Res<ButtonInput<KeyCode>>, mut saves: EventWriter<GoSaveT
 }
 
 fn calculate_mesh_data(
-    slope: Vec3,
+    slope: &TileSlope,
     wall_counts: [u32; 4],
     flags: TileFlags,
 ) -> (Vec<([f32; 3], [f32; 2])>, Vec<u32>) {
@@ -692,7 +691,7 @@ fn calculate_mesh_data(
         indices.append(&mut offset_indices(data.1));
     };
 
-    let corners = get_slope_corner_depths(slope, !flags.intersects(TileFlags::Exclusive));
+    let corners = slope.get_slope_corner_depths(!flags.intersects(TileFlags::Exclusive));
 
     let top_vertices = top_vertices(corners, flags);
 
@@ -717,53 +716,6 @@ fn calculate_mesh_data(
     insert(top_vertices);
 
     (vertices, indices)
-}
-
-/// For the given slope (`s`) value, returns the depth of the four corners of a tile
-/// that should become a slope.
-///
-/// `inclusive` determines the shape a slope will take,
-/// notably determining whether corner slopes become extrusive or intrusive.
-pub(crate) fn get_slope_corner_depths(s: Vec3, inclusive: bool) -> [f32; 4] {
-    let i = inclusive as i32 as f32;
-    let pos: Box<dyn Fn(f32) -> f32> = Box::new(|value: f32| f32::clamp(value, 0., f32::INFINITY));
-    let neg: Box<dyn Fn(f32) -> f32> =
-        Box::new(|value: f32| -f32::clamp(value, f32::NEG_INFINITY, 0.));
-
-    let points = [s.z; 4];
-    let mapping = [
-        (&neg, &pos), // tl
-        (&pos, &pos), // tr
-        (&pos, &neg), // br
-        (&neg, &neg), // bl
-    ];
-
-    let select_corner =
-        |(point, map): (f32, (&Box<dyn Fn(f32) -> f32>, &Box<dyn Fn(f32) -> f32>))| {
-            let x_component = map.0(s.x);
-            let z_component = map.1(s.z);
-
-            let mut total = 0.;
-
-            if x_component == 0. {
-                total += z_component * i
-            } else if z_component == 0. {
-                total += x_component * i
-            } else {
-                total += (x_component + z_component) / 2.
-            }
-
-            point + total.clamp(0., f32::INFINITY)
-        };
-
-    let mut a = points.into_iter().zip(mapping).map(select_corner);
-
-    [
-        a.next().unwrap(), // tl
-        a.next().unwrap(), // tr
-        a.next().unwrap(), // br
-        a.next().unwrap(), // bl
-    ]
 }
 
 /// generates the vertex data for the top of the mesh, given:

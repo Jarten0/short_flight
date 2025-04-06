@@ -9,7 +9,7 @@ mod prelude {
 }
 
 mod magical_leaf;
-mod tackle;
+pub mod tackle;
 
 /// Marks this entity as a move, aka an attack, that temporarily exists in the world.
 #[derive(
@@ -58,9 +58,20 @@ pub mod interfaces {
 
     /// This component operates with the move system
     pub trait MoveComponent: Reflect {
+        /// Initialize any useful schedules here.
+        ///
+        /// Is called for every variant with an associated data file.
         fn build(app: &mut App)
         where
             Self: Sized;
+
+        /// Return the variant dedicated to this component type.
+        fn variant() -> super::Move
+        where
+            Self: Sized;
+
+        /// Called whenever a move entity is spawned, right before this is inserted into the entity.
+        fn on_spawn(&mut self, world: &mut World, entity: Entity, move_data: &MoveData) {}
     }
 
     pub struct MovePlugin;
@@ -91,7 +102,7 @@ pub mod interfaces {
     #[derive(Debug, Asset, Reflect, Serialize, Deserialize, Clone, Default)]
     pub(crate) struct MoveData {
         pub(crate) display_name: String,
-        pub(crate) spritesheet: AnimationSpritesheet,
+        pub(crate) spritesheet: Option<AnimationSpritesheet>,
         pub(crate) collider: Option<ColliderShape>,
         #[serde(flatten)]
         #[reflect(ignore)]
@@ -105,35 +116,41 @@ pub mod interfaces {
     }
 
     pub struct SpawnMove<T: MoveComponent + Component> {
-        pub(crate) move_id: Move,
         pub(crate) move_: T,
         pub(crate) parent: Entity,
     }
 
     impl<T> Command for SpawnMove<T>
     where
-        T: Component,
+        T: Component + MoveComponent,
     {
-        fn apply(self, world: &mut World) {
+        fn apply(mut self, world: &mut World) {
+            let move_id = T::variant();
             let move_list = world.resource::<MoveList>();
-            let Some(handle) = move_list.data.get(&self.move_id) else {
-                log::error!("Could not find move data file for {:?}", self.move_id);
+            let Some(handle) = move_list.data.get(&move_id) else {
+                log::error!("Could not find move data file for {:?}", move_id);
                 return;
             };
 
-            let move_data = world.resource::<Assets<MoveData>>().get(handle).unwrap();
+            let move_data = world
+                .resource::<Assets<MoveData>>()
+                .get(handle)
+                .unwrap()
+                .clone();
 
-            world
-                .spawn((
-                    Name::new(move_data.display_name.clone()),
-                    self.move_id,
-                    self.move_,
-                    MoveInfo {
-                        id: self.move_id,
-                        data: handle.clone(),
-                    },
-                ))
-                .set_parent(self.parent);
+            let bundle = (
+                Name::new(move_data.display_name.clone()),
+                move_id,
+                MoveInfo {
+                    id: move_id,
+                    data: handle.clone(),
+                },
+            );
+            let entity = world.spawn(bundle).set_parent(self.parent).id();
+
+            self.move_.on_spawn(world, entity, &move_data);
+
+            world.entity_mut(entity).insert(self.move_);
         }
     }
 }

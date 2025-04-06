@@ -1,5 +1,5 @@
 use crate::moves::interfaces::MoveData;
-use crate::{ldtk, npc, player};
+use crate::{ldtk, moves, npc, player};
 use bevy::asset::AssetLoader;
 use bevy::prelude::*;
 use bevy::utils::HashMap;
@@ -24,7 +24,7 @@ impl Plugin for AssetsPlugin {
                 "anim.ron",
             ]))
             .init_asset::<MoveData>()
-            .register_asset_loader(RonAssetLoader::<MoveData>::with_extension(&[""]))
+            .register_asset_loader(RonAssetLoader::<MoveData>::with_extension(&["move.ron"]))
             .add_loading_state(
                 LoadingState::new(ShortFlightLoadingState::First)
                     .load_collection::<ldtk::MapAssets>()
@@ -40,6 +40,7 @@ impl Plugin for AssetsPlugin {
             .add_loading_state(
                 LoadingState::new(ShortFlightLoadingState::LoadNPCAssets)
                     .load_collection::<npc::file::NPCAlmanac>()
+                    .load_collection::<moves::interfaces::MoveList>()
                     .on_failure_continue_to_state(ShortFlightLoadingState::FailState)
                     .continue_to_state(ShortFlightLoadingState::SpawnWithAssets),
             )
@@ -127,6 +128,8 @@ pub(super) struct AnimationSpritesheet {
     pub sprite_size: UVec2,
     pub data: AnimationAssets,
     #[serde(skip)]
+    pub max_items: u32,
+    #[serde(skip)]
     pub atlas: Option<Handle<TextureAtlasLayout>>,
     #[serde(skip)]
     pub texture: Option<Handle<Image>>,
@@ -159,8 +162,8 @@ impl std::ops::Index<AnimType> for AnimationSpritesheet {
 }
 
 impl AnimationSpritesheet {
-    pub fn get_texture_atlas(&self) -> TextureAtlasLayout {
-        let max_items = self
+    pub fn get_texture_atlas(&mut self) -> TextureAtlasLayout {
+        self.max_items = self
             .data
             .0
             .iter()
@@ -169,7 +172,7 @@ impl AnimationSpritesheet {
             .unwrap_or(0);
         TextureAtlasLayout::from_grid(
             self.sprite_size,
-            max_items,
+            self.max_items,
             self.animations.len() as u32,
             None,
             None,

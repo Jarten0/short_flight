@@ -1,0 +1,5 @@
+{
+    display_name: "Tackle",
+    spritesheet: None,
+    collider: Some(Circle(20.0)),
+}

@@ -1,42 +1,61 @@
+use std::cmp::Ordering;
+
 use super::anim_state::ShayminAnimation;
 use super::{Client, ClientQuery};
-use crate::ldtk::{TileDepth, TileFlags, TileSlope};
-use crate::mesh;
+use crate::tile::{TileDepth, TileFlags, TileSlope};
 use bevy::color::palettes;
 use bevy::prelude::*;
 use bevy_ecs_tilemap::tiles::TilePos;
 use short_flight::animation;
 use short_flight::collision::{
-    BasicCollider, ColliderShape, CollisionEvent, CollisionLayers, DynamicCollision,
-    StaticCollision, ZHitbox,
+    BasicCollider, ColliderShape, CollisionEnterEvent, CollisionExitEvent, CollisionLayers,
+    DynamicCollision, StaticCollision, ZHitbox,
 };
 
 #[derive(Debug, Component)]
 #[require(DynamicCollision)]
 pub struct ShayminRigidbody {
-    previous_position: Vec3,
+    grounded: Option<Entity>,
+    velocity: Vec3,
 }
 
 pub fn setup(shaymin: Client, mut commands: Commands) {
     commands.entity(*shaymin).insert((
-        BasicCollider {
-            dynamic: true,
-            shape: ColliderShape::Circle(20. / 32. / 2.),
-            layers: CollisionLayers::NPC,
-            can_interact: CollisionLayers::NPC
-                | CollisionLayers::Projectile
-                | CollisionLayers::Wall,
-        },
+        BasicCollider::new(
+            true,
+            ColliderShape::Circle(20. / 32. / 2.),
+            CollisionLayers::NPC,
+            CollisionLayers::NPC | CollisionLayers::Projectile | CollisionLayers::Wall,
+        ),
         ZHitbox {
             y_tolerance: 0.5,
             neg_y_tolerance: 0.0,
         },
         ShayminRigidbody {
-            previous_position: Vec3::ZERO,
+            grounded: None,
+            velocity: Vec3::default(),
         },
-        DynamicCollision {},
+        DynamicCollision::default(),
     ));
-    commands.add_observer(on_collision);
+    commands
+        .entity(*shaymin)
+        .observe(move_out_from_tilemaps)
+        .observe(
+            |trigger: Trigger<CollisionEnterEvent>, mut query: Query<&mut ShayminRigidbody>| {
+                let Ok(mut rigidbody) = query.get_mut(trigger.this) else {
+                    return;
+                };
+                rigidbody.grounded = Some(trigger.other);
+            },
+        )
+        .observe(
+            |trigger: Trigger<CollisionExitEvent>, mut query: Query<&mut ShayminRigidbody>| {
+                let Ok(mut rigidbody) = query.get_mut(trigger.this) else {
+                    return;
+                };
+                rigidbody.grounded = None;
+            },
+        );
 }
 
 pub fn control_shaymin(
@@ -46,8 +65,6 @@ pub fn control_shaymin(
     delta: Res<Time<Fixed>>,
 ) {
     let (mut transform, anim) = shaymin.into_inner();
-
-    transform.translation.y -= 4. * delta.delta_secs();
 
     let mut cam_transform = camera.unwrap().into_inner();
 
@@ -160,64 +177,83 @@ pub fn draw_colliders(
         }
     }
 }
-pub fn update_rigidbodies(mut rigidbodies: Query<(&mut ShayminRigidbody, &Transform)>) {
-    for (mut rigidbody, transform) in &mut rigidbodies {
-        if rigidbody.previous_position != transform.translation {
-            rigidbody.previous_position = transform.translation;
+
+pub fn update_dynamic_collision(mut dyn_collision: Query<(&mut DynamicCollision, &Transform)>) {
+    for (mut dyn_info, transform) in &mut dyn_collision {
+        if dyn_info.previous_position != transform.translation {
+            dyn_info.previous_position = transform.translation;
         }
     }
 }
 
-pub fn on_collision(
-    trigger: Trigger<CollisionEvent>,
-
-    mut rigidbody: Query<(&ShayminRigidbody, &GlobalTransform, &mut Transform)>,
-    other_col: Query<(
-        &BasicCollider,
+pub fn update_rigidbodies(
+    mut dyn_collision: Query<(
+        &mut ShayminRigidbody,
+        &mut Transform,
         &GlobalTransform,
-        &ZHitbox,
-        Option<((&TilePos, &TileDepth, &TileSlope, &TileFlags))>,
+        &BasicCollider,
     )>,
-    mut gizmos: Gizmos,
+    tile_data_query: Query<(&GlobalTransform, &TileSlope, &TileFlags), Without<ShayminRigidbody>>,
+    time: Res<Time>,
 ) {
-    let (rigidbody, global_transform, mut transform) = rigidbody.get_mut(trigger.this).unwrap();
-    let global_translation = global_transform.translation();
-    let relative_translation = &mut transform.translation;
+    for (mut rigidbody, mut transform, gtransform, basic_collider) in &mut dyn_collision {
+        if let Some(ground) = rigidbody.grounded {
+            let first = basic_collider
+                .currently_colliding
+                .iter()
+                .filter_map(|value| tile_data_query.get(*value).ok())
+                .max_by(|item, item2| item.0.translation().y.total_cmp(&item2.0.translation().y));
+            let Some((gtransform2, slope, flags)) = first else {
+                rigidbody.grounded = None;
+                continue;
+            };
 
-    let (collider, global_transform2, zhitbox, tile_query) = other_col.get(trigger.other).unwrap();
-    let global_translation2 = global_transform2.translation();
-
-    let start = *relative_translation;
-
-    if let Some((_tile_pos, tile_depth, tile_slope, _tile_flags)) = tile_query {
-        let tile_pos = global_translation2;
-        // let ColliderShape::Rect(rect) = &collider.shape else {
-        //     return;
-        // };
-        let movement = rigidbody.previous_position - *relative_translation;
-
-        // floor and roof hitboxes stretch to match player velocity :3
-        let hitbox_height = tile_pos.y + movement.y + 0.3;
-
-        // let slope = {
-        //     mesh::get_slope_corner_depths(tile_slope, inclusive)
-        // }
-
-        if global_translation.y <= hitbox_height {
-            let tile_top = tile_pos.y + tile_slope.0.length();
-            relative_translation.y = tile_top;
-        } else if global_translation.y >= tile_pos.y - hitbox_height + zhitbox.height() {
-            relative_translation.y = tile_pos.y + tile_slope.0.length();
-        } else {
-            *relative_translation -= Vec3::new(movement.x, 0.0, movement.z) * 8.;
+            transform.translation.y = gtransform2.translation().y
+                + slope.get_height_at_point(
+                    flags,
+                    gtransform.translation().xz() - gtransform2.translation().xz(),
+                );
         }
 
-        // log::info!("{}", (hitbox_height));
+        match rigidbody.grounded {
+            Some(s) => {
+                rigidbody.velocity.y = 0.0;
+            }
+            None => {
+                rigidbody.velocity.y -= 2.0 * time.delta_secs();
+            }
+        }
+
+        transform.translation += rigidbody.velocity * time.delta_secs();
+    }
+}
+
+/// If observing, then the entity will be pushed outside of tilemaps
+pub fn move_out_from_tilemaps(
+    trigger: Trigger<CollisionEnterEvent>,
+    mut rigidbody: Query<(&DynamicCollision, &GlobalTransform, &mut Transform)>,
+    other_col: Query<(&BasicCollider, &GlobalTransform)>,
+    tile_data_query: Query<(&TileSlope, &TileFlags)>,
+) {
+    let Ok((rigidbody, gtransform, mut transform)) = rigidbody.get_mut(trigger.this) else {
+        return;
     };
 
-    // match &collider.shape {
-    //     ColliderShape::Rect(rect) => {}
-    //     ColliderShape::Circle { radius } => {}
-    //     ColliderShape::Mesh(handle) => todo!(),
-    // }
+    let Ok((collider, gtransform2)) = other_col.get(trigger.other) else {
+        return;
+    };
+
+    if !collider.layers.intersects(CollisionLayers::Wall) {
+        return;
+    }
+
+    let Ok((tile_slope, tile_flags)) = tile_data_query.get(trigger.other) else {
+        return;
+    };
+
+    let point = gtransform.translation().xz() - gtransform2.translation().xz();
+
+    let max = tile_slope.get_height_at_point(tile_flags, point);
+
+    transform.translation.y = max + gtransform2.translation().y;
 }

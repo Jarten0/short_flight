@@ -1,7 +1,6 @@
-use bevy::asset::RenderAssetUsages;
 use bevy::color::palettes;
 use bevy::prelude::*;
-use bevy::render::mesh::{MeshVertexAttribute, PrimitiveTopology};
+use bevy::utils::HashSet;
 use bitflags::bitflags;
 use serde::{Deserialize, Serialize};
 
@@ -9,24 +8,26 @@ pub struct CollisionPlugin;
 
 impl Plugin for CollisionPlugin {
     fn build(&self, app: &mut App) {
-        app.add_event::<CollisionEvent>().add_systems(
-            FixedPostUpdate,
-            (
-                // run GlobalTransform synchronization here for query_overlaps
+        app.add_event::<CollisionEnterEvent>()
+            .add_event::<CollisionExitEvent>()
+            .add_systems(
+                FixedPostUpdate,
                 (
-                    bevy::transform::systems::propagate_transforms,
-                    bevy::transform::systems::sync_simple_transforms,
-                ),
-                query_overlaps, // this uses the latest GlobalTransform, but doesn't change any Transform's
-                (
-                    bevy::transform::systems::propagate_transforms,
-                    bevy::transform::systems::sync_simple_transforms,
-                ),
-                propogate_collision_events, // this will be changing Transform's after GlobalTransform is used
-                                            // GlobalTransforms will be finally updated in PostUpdate
-            )
-                .chain(),
-        );
+                    // run GlobalTransform synchronization here for query_overlaps
+                    (
+                        bevy::transform::systems::propagate_transforms,
+                        bevy::transform::systems::sync_simple_transforms,
+                    ),
+                    query_overlaps, // this uses the latest GlobalTransform, but doesn't change any Transform's
+                    (
+                        bevy::transform::systems::propagate_transforms,
+                        bevy::transform::systems::sync_simple_transforms,
+                    ),
+                    propogate_collision_events, // this will be changing Transform's after GlobalTransform is used
+                                                // GlobalTransforms will be finally updated in PostUpdate
+                )
+                    .chain(),
+            );
     }
 }
 
@@ -68,7 +69,9 @@ impl ZHitbox {
 
 /// Information for objects that move
 #[derive(Debug, Reflect, Component, Default)]
-pub struct DynamicCollision {}
+pub struct DynamicCollision {
+    pub previous_position: Vec3,
+}
 
 /// Information for objects that cannot nor should ever move
 #[derive(Debug, Reflect, Component, Default)]
@@ -81,6 +84,24 @@ pub struct BasicCollider {
     pub shape: ColliderShape,
     pub layers: CollisionLayers,
     pub can_interact: CollisionLayers,
+    pub currently_colliding: HashSet<Entity>,
+}
+
+impl BasicCollider {
+    pub fn new(
+        dynamic: bool,
+        shape: ColliderShape,
+        layers: CollisionLayers,
+        can_interact: CollisionLayers,
+    ) -> Self {
+        Self {
+            dynamic,
+            shape,
+            layers,
+            can_interact,
+            currently_colliding: HashSet::new(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Reflect, Serialize, Deserialize)]
@@ -134,12 +155,19 @@ impl Default for ColliderShape {
 }
 
 #[derive(Debug, Event, Clone)]
-pub struct CollisionEvent {
+pub struct CollisionEnterEvent {
+    pub this: Entity,
+    pub other: Entity,
+}
+
+#[derive(Debug, Event, Clone)]
+pub struct CollisionExitEvent {
     pub this: Entity,
     pub other: Entity,
 }
 
 fn query_overlaps(
+    mut commands: Commands,
     dyn_objects: Query<(
         Entity,
         &GlobalTransform,
@@ -154,7 +182,8 @@ fn query_overlaps(
         &ZHitbox,
         AnyOf<(&DynamicCollision, &StaticCollision)>,
     )>,
-    mut collision_events: EventWriter<CollisionEvent>,
+    mut collision_events: EventWriter<CollisionEnterEvent>,
+    mut collision_exit_events: EventWriter<CollisionExitEvent>,
     mut gizmos: Gizmos,
 ) {
     for (entity, transform, dyn_col, z_hitbox, dyn_info) in &dyn_objects {
@@ -191,11 +220,28 @@ fn query_overlaps(
                         continue;
                     }
 
-                    if result {
-                        collision_events.send(CollisionEvent {
-                            this: entity,
-                            other: entity2,
-                        });
+                    if result && !dyn_col.currently_colliding.contains(&entity2) {
+                        commands
+                            .entity(entity)
+                            .trigger(CollisionEnterEvent {
+                                this: entity,
+                                other: entity2,
+                            })
+                            .queue(DeferCollidingUpdate {
+                                enter: true,
+                                other: entity2,
+                            });
+                    } else if !result && dyn_col.currently_colliding.contains(&entity2) {
+                        commands
+                            .entity(entity)
+                            .trigger(CollisionExitEvent {
+                                this: entity,
+                                other: entity2,
+                            })
+                            .queue(DeferCollidingUpdate {
+                                enter: false,
+                                other: entity2,
+                            });
                     }
                 }
             }
@@ -262,11 +308,28 @@ fn query_overlaps(
                         ColliderShape::Mesh(handle) => unimplemented!(),
                     };
 
-                    if result {
-                        collision_events.send(CollisionEvent {
-                            this: entity,
-                            other: entity2,
-                        });
+                    if result && !dyn_col.currently_colliding.contains(&entity2) {
+                        commands
+                            .entity(entity)
+                            .trigger(CollisionEnterEvent {
+                                this: entity,
+                                other: entity2,
+                            })
+                            .queue(DeferCollidingUpdate {
+                                enter: true,
+                                other: entity2,
+                            });
+                    } else if !result && dyn_col.currently_colliding.contains(&entity2) {
+                        commands
+                            .entity(entity)
+                            .trigger(CollisionExitEvent {
+                                this: entity,
+                                other: entity2,
+                            })
+                            .queue(DeferCollidingUpdate {
+                                enter: false,
+                                other: entity2,
+                            });
                     }
                 }
             }
@@ -295,11 +358,45 @@ fn offset_rect(col_rect: &Rect, transform: &GlobalTransform) -> Rect {
     rect
 }
 
-fn propogate_collision_events(mut events: EventReader<CollisionEvent>, mut commands: Commands) {
+fn propogate_collision_events(
+    mut events: EventReader<CollisionEnterEvent>,
+    mut events2: EventReader<CollisionExitEvent>,
+    mut commands: Commands,
+) {
     for event in events.read() {
         commands.trigger(event.clone());
     }
     if !events.is_empty() {
         events.clear();
+    }
+    for event in events2.read() {
+        commands.trigger(event.clone());
+    }
+    if !events2.is_empty() {
+        events2.clear();
+    }
+}
+
+struct DeferCollidingUpdate {
+    enter: bool,
+    other: Entity,
+}
+
+impl EntityCommand for DeferCollidingUpdate {
+    fn apply(self, entity: Entity, world: &mut World) {
+        log::info!("{}", self.enter);
+        if self.enter {
+            world
+                .get_mut::<BasicCollider>(entity)
+                .unwrap()
+                .currently_colliding
+                .insert(self.other);
+        } else {
+            world
+                .get_mut::<BasicCollider>(entity)
+                .unwrap()
+                .currently_colliding
+                .remove(&self.other);
+        }
     }
 }

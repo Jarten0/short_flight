@@ -10,6 +10,7 @@ mod moves;
 mod npc;
 mod player;
 mod projectile;
+mod tile;
 
 fn main() {
     App::new()
@@ -19,6 +20,7 @@ fn main() {
         // game
         .add_plugins(assets::AssetsPlugin)
         .add_plugins(npc::NPCPlugin)
+        .add_plugins(moves::interfaces::MovePlugin)
         .add_plugins(player::ShayminPlugin)
         .add_plugins(ldtk::LdtkPlugin)
         // lib

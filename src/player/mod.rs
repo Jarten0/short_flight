@@ -23,10 +23,15 @@ impl Plugin for ShayminPlugin {
         app.world_mut().spawn(Shaymin);
         app.add_systems(Startup, (setup, physics::setup))
             .add_systems(OnEnter(ShortFlightLoadingState::Done), insert_assets)
-            .add_systems(FixedFirst, physics::update_rigidbodies)
+            .add_systems(FixedFirst, physics::update_dynamic_collision)
             .add_systems(
                 FixedUpdate,
-                (physics::control_shaymin, anim_state::update_materials).chain(),
+                (
+                    physics::control_shaymin,
+                    physics::update_rigidbodies,
+                    anim_state::update_materials,
+                )
+                    .chain(),
             )
             .add_systems(PostUpdate, (physics::draw_colliders).chain())
             .add_systems(OnEnter(ShortFlightLoadingState::FailState), retry);

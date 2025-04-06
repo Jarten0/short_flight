@@ -49,19 +49,10 @@ impl AnimType {
             _ => true,
         }
     }
-    fn use_timer(self) -> bool {
+    fn reset_timer(self) -> bool {
         match self {
             Idle => false,
             _ => true,
-        }
-    }
-    fn default_animation_time(self) -> f32 {
-        match self {
-            Idle => 0.0,
-            Walking => 0.0,
-            AttackSwipe => 2.0,
-            AttackTackle => 2.0,
-            _ => 1.0,
         }
     }
     pub fn create_data(self) -> AnimationData {
@@ -102,7 +93,7 @@ impl AnimationData {
 
         if *frame >= self.frames as f32 {
             *frame = 0.0;
-            return self.variant.use_timer();
+            return self.variant.reset_timer();
         }
 
         return false;

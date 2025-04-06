@@ -95,14 +95,12 @@ impl Command for SpawnNPC {
         let mut entity = world.spawn((required, sprite_3d_bundle));
 
         if let Some(shape) = collider_shape {
-            entity.insert(BasicCollider {
-                dynamic: true,
+            entity.insert(BasicCollider::new(
+                true,
                 shape,
-                layers: CollisionLayers::NPC,
-                can_interact: CollisionLayers::Wall
-                    | CollisionLayers::NPC
-                    | CollisionLayers::Projectile,
-            });
+                CollisionLayers::NPC,
+                CollisionLayers::Wall | CollisionLayers::NPC | CollisionLayers::Projectile,
+            ));
         }
 
         match npcinfo {

@@ -1,8 +1,8 @@
 use crate::assets::ShortFlightLoadingState;
 use crate::npc;
 use crate::npc::NPC;
+use crate::tile::{TileDepth, TileFlags, TileSlope};
 use bevy::color::palettes;
-use bevy::color::palettes::tailwind::RED_500;
 use bevy::ecs::system::SystemState;
 use bevy::prelude::Asset;
 use bevy::{asset::io::Reader, reflect::TypePath};
@@ -20,7 +20,9 @@ use bevy_ecs_tilemap::{
 use bevy_picking::pointer::PointerInteraction;
 use bitflags::bitflags;
 use serde::{Deserialize, Serialize};
-use short_flight::collision::{BasicCollider, ColliderShape, CollisionLayers, StaticCollision, ZHitbox};
+use short_flight::collision::{
+    BasicCollider, ColliderShape, CollisionLayers, StaticCollision, ZHitbox,
+};
 use short_flight::deserialize_file;
 use std::{collections::HashMap, io::ErrorKind};
 use thiserror::Error;
@@ -29,79 +31,6 @@ use thiserror::Error;
 pub struct MapAssets {
     #[asset(path = "tilemap.ldtk")]
     pub map: Handle<LdtkMap>,
-}
-
-/// Initialized differently from the LDTK map data, this determines how high up the object is.
-// There's no settlement on if the value will be represented as an `i64` in the future
-// so for now, just use f32 and i64 to access the value, and From to set.
-#[derive(Debug, Reflect, Component, Default, Clone, Serialize, Deserialize)]
-#[serde(transparent)]
-pub struct TileDepth(i64);
-
-impl TileDepth {
-    /// use this if
-    #[inline]
-    pub fn f32(&self) -> f32 {
-        self.0 as f32
-    }
-
-    /// use this instead of accessing if potentially using an f32 converted to an i64 is future proof
-    #[inline]
-    pub fn i64(&self) -> i64 {
-        self.0
-    }
-}
-
-impl Into<f32> for TileDepth {
-    fn into(self) -> f32 {
-        self.0 as f32
-    }
-}
-
-impl From<f32> for TileDepth {
-    fn from(value: f32) -> Self {
-        Self(value as i64)
-    }
-}
-impl From<i64> for TileDepth {
-    fn from(value: i64) -> Self {
-        Self(value)
-    }
-}
-
-#[derive(Debug, Reflect, Component, Default, Clone, Serialize, Deserialize)]
-#[serde(transparent)]
-pub struct TileSlope(pub Vec3);
-
-/// Bitflags for how the tile should be visibly changed
-///
-/// Rotation bitflags are assumed to be clockwise
-#[derive(Debug, Reflect, Component, Default, Clone, Copy, Serialize, Deserialize, PartialEq)]
-#[serde(transparent)]
-pub struct TileFlags(u32);
-
-bitflags! {
-    impl TileFlags: u32 {
-        const FlipX = 0b1;
-        const FlipY = 0b1 << 1;
-        const RotateClockwise = 0b1 << 2;
-        const RotateCounterClockwise = 0b1 << 3;
-        const FlipTriangles = 0b1 << 4;
-        const Exclusive = 0b1 << 5;
-        const Fold = 0b1 << 6;
-        // const  = 0b1 << 7;
-    }
-}
-
-impl std::fmt::Display for TileFlags {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let flags = self
-            .iter_names()
-            .filter(|value| value.1.intersects(*self))
-            .map(|value| value.0)
-            .fold("".to_string(), |a, b| a + b + ", ");
-        write!(f, "{}", flags)
-    }
 }
 
 #[derive(Default)]
@@ -465,15 +394,15 @@ fn spawn_map_components(commands: &mut Commands, ldtk_map: &LdtkMap, map_config:
                 position,
                 TilemapId(map_entity),
                 TileTextureIndex(tile.t as u32),
-                BasicCollider {
-                    dynamic: false,
-                    shape: ColliderShape::Rect(Rect {
+                BasicCollider::new(
+                    false,
+                    ColliderShape::Rect(Rect {
                         min: Vec2 { x: 0., y: 0. },
                         max: Vec2 { x: 1., y: 1. },
                     }),
-                    layers: CollisionLayers::Wall,
-                    can_interact: CollisionLayers::all(),
-                },
+                    CollisionLayers::Wall,
+                    CollisionLayers::all(),
+                ),
                 ZHitbox {
                     y_tolerance: tile_slope.0.abs().max_element(),
                     neg_y_tolerance: f32::NEG_INFINITY,

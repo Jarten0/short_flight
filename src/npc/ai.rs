@@ -1,6 +1,8 @@
 use bevy::prelude::*;
 use short_flight::animation::AnimType;
 
+use crate::moves::interfaces::SpawnMove;
+use crate::moves::tackle::Tackle;
 use crate::player::Shaymin;
 
 use super::animation::NPCAnimation;
@@ -42,7 +44,6 @@ impl Default for NPCActions {
 }
 
 pub(crate) fn run_enemy_npc_ai(
-    mut commands: Commands,
     query: Query<
         (
             Entity,
@@ -61,7 +62,7 @@ pub(crate) fn run_enemy_npc_ai(
         };
 
         // blocking animations shouldnt let them do anything anyways, so skip now to save on the extra work
-        if npc_anim.get_animation_data().is_blocking() {
+        if npc_anim.animation_data().is_blocking() {
             continue;
         }
         let result = match *npc_actions {
@@ -142,18 +143,36 @@ pub(crate) fn run_enemy_npc_ai(
 }
 
 pub(crate) fn commit_npc_actions(
-    mut query: Query<(&NPCInfo, &NPCDesicion, &mut NPCAnimation, &mut Transform)>,
+    mut commands: Commands,
+    mut query: Query<(
+        Entity,
+        &NPCInfo,
+        &NPCDesicion,
+        &mut NPCAnimation,
+        &mut Transform,
+    )>,
     time: Res<Time>,
 ) {
-    for (info, desicion, mut anim, mut transform) in &mut query {
+    for (entity, info, desicion, mut anim, mut transform) in &mut query {
         match desicion {
             NPCDesicion::Idle => (),
             NPCDesicion::Move { direction } => {
                 transform.translation += direction * time.delta_secs();
             }
-            NPCDesicion::Attack { direction } => todo!(),
+            NPCDesicion::Attack { direction } => {
+                if !anim.animation_data().is_blocking() {
+                    anim.start_animation(
+                        AnimType::AttackTackle,
+                        Some(Vec3::from((*direction, 0.0)).xzy()),
+                    );
+                    commands.queue(SpawnMove {
+                        move_: Tackle,
+                        parent: entity,
+                    })
+                }
+            }
             NPCDesicion::SetAnimation(anim_type) => {
-                anim.current = *anim_type;
+                anim.start_animation(*anim_type, None);
             }
         }
     }

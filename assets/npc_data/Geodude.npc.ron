@@ -2,7 +2,7 @@ NPCData(
     display_name: "Geodude",
     info: Enemy(),
     collider: Some(Circle(
-            20.0,
+            0.625,
         )),
     stats: Some((
         Health(hp: 20),
@@ -15,8 +15,8 @@ NPCData(
         animations: [
             Idle,
             Walking, // AttackSwipe,
-        // AttackTackle,
-        // Hurt,
+        AttackTackle,
+        Hurt,
         // Down,
         // Fainting,
         // Fainted,
@@ -28,29 +28,32 @@ NPCData(
         data: {
             Idle: {
                 variant: Idle,
-                frames: 2,
+                frames: 4,
             },
             Walking: {
                 variant: Walking,
                 frames: 2,
-            }, // AttackSwipe: AnimationData(
-        //     frames: 2,
-        // ),
-        // AttackTackle: AnimationData(
-        //     frames: 2,
-        // ),
-        // Hurt: AnimationData(
-        //     frames: 2,
-        // ),
-        // Down: AnimationData(
-        //     frames: 2,
-        // ),
-        // Fainting: AnimationData(
-        //     frames: 2,
-        // ),
-        // Fainted: AnimationData(
-        //     frames: 2,
-        // ),
+            }, 
+            // AttackSwipe: AnimationData(
+            //     frames: 2,
+            // ),
+            AttackTackle:  {
+                variant: AttackTackle,
+                frames: 4,
+            },
+            Hurt: {
+                variant: Hurt,
+                frames: 1,
+            },
+            // Down: AnimationData(
+            //     frames: 2,
+            // ),
+            // Fainting: AnimationData(
+            //     frames: 2,
+            // ),
+            // Fainted: AnimationData(
+            //     frames: 2,
+            // ),
         },
     ),
 )

@@ -9,12 +9,12 @@ use short_flight::animation::{AnimType, AnimationData};
 #[derive(Debug, Component)]
 #[require(NPC)]
 pub(crate) struct NPCAnimation {
-    pub current: AnimType,
+    current: AnimType,
     /// how far the animation has progressed in seconds.
     /// the name "frame" is a bit archaic in the context, but its familiarity is why I named it as such.
-    pub frame: f32,
+    frame: f32,
     /// the direction the npc is facing
-    pub direction: Vec3,
+    direction: Vec3,
     pub animations: HashMap<AnimType, AnimationData>,
     pub spritesheet: AnimationSpritesheet,
 }
@@ -30,28 +30,87 @@ impl NPCAnimation {
         }
     }
 
-    pub fn update(&mut self, delta: f32) {
-        if self.spritesheet[self.current].process_timer(&mut self.frame, delta) {
-            self.current = AnimType::Idle;
-            self.frame = 0.0;
+    pub fn update(&mut self, delta: f32) -> bool {
+        let Some(animation_data) = self.animations.get(&self.current) else {
+            log::error!("Could not find animation data for {:?}", self.current);
+            self.frame += delta;
+            // self.start_animation(AnimType::Idle, None);
+            return true;
         };
+
+        if animation_data.process_timer(&mut self.frame, delta) {
+            self.current = AnimType::Idle;
+            true
+        } else {
+            false
+        }
     }
 
     pub fn get_current_atlas(&self) -> Option<TextureAtlas> {
         Some(TextureAtlas {
             layout: self.spritesheet.atlas.as_ref()?.clone_weak(),
-            index: self.frame.floor() as usize,
+            index: self.frame.floor() as usize
+                + (self
+                    .spritesheet
+                    .animations
+                    .iter()
+                    .enumerate()
+                    .find(|value| *value.1 == self.current)
+                    .map(|value| value.0)
+                    .unwrap_or(0)
+                    * self.spritesheet.max_items as usize),
         })
     }
 
-    pub fn get_animation_data(&self) -> &AnimationData {
-        &self.spritesheet.data.0[&self.current]
+    pub fn frame(&self) -> f32 {
+        self.frame
+    }
+
+    pub fn current(&self) -> AnimType {
+        self.current
+    }
+
+    pub fn direction(&self) -> Vec3 {
+        self.direction
+    }
+
+    pub fn animation_data(&self) -> &AnimationData {
+        self.spritesheet
+            .data
+            .0
+            .get(&self.current)
+            .unwrap_or_else(|| {
+                log::error!(
+                    "Could not find animation data for {:?} in {:#?}",
+                    self.current,
+                    self.animations
+                );
+                panic!("Failed to find animation data")
+            })
+    }
+
+    pub fn get_animation_data(&self) -> Option<&AnimationData> {
+        self.spritesheet.data.0.get(&self.current)
+    }
+
+    pub fn start_animation(&mut self, animation: AnimType, direction: Option<Vec3>) {
+        self.frame = 0.0;
+        self.current = animation;
+        if let Some(direction) = direction {
+            self.direction = direction;
+        }
     }
 }
 
-pub(super) fn update_sprite_timer(mut npcs: Query<&mut NPCAnimation>, delta: Res<Time>) {
-    for mut anim in &mut npcs {
-        anim.update(delta.delta_secs());
+pub(super) fn update_sprite_timer(
+    mut commands: Commands,
+    mut npcs: Query<(Entity, &mut NPCAnimation)>,
+    delta: Res<Time>,
+) {
+    for (parent, mut anim) in &mut npcs {
+        if anim.update(delta.delta_secs() * 3.) {
+            commands.entity(parent).despawn_descendants();
+        }
     }
 }
 
