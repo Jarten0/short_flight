@@ -1,6 +1,8 @@
 use crate::assets::AnimationAssets;
 use crate::assets::{RonAssetLoader, ShortFlightLoadingState};
+use crate::npc::animation::NPCAnimation;
 use assets::ShayminAssets;
+use bevy::ecs::system::SystemState;
 use bevy::prelude::*;
 use bevy_asset_loader::loading_state::LoadingStateAppExt;
 use bevy_asset_loader::prelude::*;
@@ -22,16 +24,15 @@ impl Plugin for ShayminPlugin {
     fn build(&self, app: &mut App) {
         app.world_mut().spawn(Shaymin);
         app.add_systems(Startup, (setup, physics::setup))
-            .add_systems(OnEnter(ShortFlightLoadingState::Done), insert_assets)
+            .add_systems(
+                OnEnter(ShortFlightLoadingState::PlayerLoading),
+                insert_animation,
+            )
+            .add_systems(OnEnter(ShortFlightLoadingState::Done), insert_sprite)
             .add_systems(FixedFirst, physics::update_dynamic_collision)
             .add_systems(
                 FixedUpdate,
-                (
-                    physics::control_shaymin,
-                    physics::update_rigidbodies,
-                    anim_state::update_materials,
-                )
-                    .chain(),
+                (physics::control_shaymin, physics::update_rigidbodies).chain(),
             )
             .add_systems(PostUpdate, (physics::draw_colliders).chain())
             .add_systems(OnEnter(ShortFlightLoadingState::FailState), retry);
@@ -53,28 +54,44 @@ fn setup(shaymin: Client, mut commands: Commands) {
 }
 
 /// Runs after all of the assets are loaded
-fn insert_assets(
+fn insert_animation(
     shaymin: Client,
     mut commands: Commands,
     asset_server: Res<AssetServer>,
     assets: Res<ShayminAssets>,
-    anim_assets: Res<Assets<AnimationAssets>>,
-    sprite3d_params: Sprite3dParams,
 ) {
+    let animation = anim_state::animation(&asset_server, &assets);
     commands
         .entity(*shaymin)
-        .insert((
-            anim_state::animation(&asset_server, &assets, anim_assets),
-            InheritedVisibility::VISIBLE,
-        ))
-        .with_child((
-            Name::new("3D Sprite"),
-            anim_state::sprite(&assets, sprite3d_params),
-            Transform::from_xyz(0.0, 1.0, 0.0)
-                .with_rotation(Quat::from_rotation_x(f32::to_radians(-90.0))),
-        ));
+        .insert((animation, InheritedVisibility::VISIBLE));
+
     log::info!("Inserted shaymin assets");
 }
+
+fn insert_sprite(
+    mut sprite_3d_params: Sprite3dParams,
+    client: ClientQuery<(Entity, &NPCAnimation)>,
+    mut commands: Commands,
+    assets: Res<ShayminAssets>,
+) {
+    let sprite = anim_state::sprite(&assets).bundle_with_atlas(
+        &mut sprite_3d_params,
+        TextureAtlas {
+            layout: client.1.spritesheet.atlas.clone().unwrap(),
+            index: 0,
+        },
+    );
+    commands.entity(client.0).with_child((
+        Name::new("3D Sprite"),
+        sprite,
+        Transform::from_xyz(0.0, 1.0, 0.0)
+            .with_rotation(Quat::from_rotation_x(f32::to_radians(-90.0))),
+        MarkerUgh,
+    ));
+}
+
+#[derive(Debug, Component)]
+pub struct MarkerUgh;
 
 /// Runs if any of the assets cannot be loaded
 fn retry(mut commands: Commands, asset_server: Res<AssetServer>) {
@@ -82,12 +99,12 @@ fn retry(mut commands: Commands, asset_server: Res<AssetServer>) {
     let shaymin = asset_server.load::<Image>("shaymin/shaymin.png");
     let asset = {
         let hash_map = [
-            AnimType::Idle.create_data(),
-            AnimType::Walking.create_data(),
-            AnimType::Hurt.create_data(),
-            AnimType::Down.create_data(),
-            AnimType::AttackSwipe.create_data(),
-            AnimType::AttackTackle.create_data(),
+            AnimType::Idle.create_data(1),
+            AnimType::Walking.create_data(1),
+            AnimType::Hurt.create_data(1),
+            AnimType::Down.create_data(1),
+            AnimType::AttackSwipe.create_data(1),
+            AnimType::AttackTackle.create_data(1),
         ]
         .into_iter()
         .map(|animation| (animation.variant, animation))

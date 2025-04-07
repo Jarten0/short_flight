@@ -1,5 +1,7 @@
 use super::NPC;
 use crate::assets::AnimationSpritesheet;
+use crate::moves::interfaces::MoveInfo;
+use crate::player::{ClientQuery, MarkerUgh, Shaymin};
 use bevy::prelude::*;
 use bevy::utils::HashMap;
 use bevy_sprite3d::Sprite3d;
@@ -17,6 +19,7 @@ pub(crate) struct NPCAnimation {
     direction: Vec3,
     pub animations: HashMap<AnimType, AnimationData>,
     pub spritesheet: AnimationSpritesheet,
+    pub loop_: bool,
 }
 
 impl NPCAnimation {
@@ -27,6 +30,7 @@ impl NPCAnimation {
             animations: spritesheet.data.0.clone(),
             spritesheet,
             frame: 0.0,
+            loop_: false,
         }
     }
 
@@ -34,12 +38,13 @@ impl NPCAnimation {
         let Some(animation_data) = self.animations.get(&self.current) else {
             log::error!("Could not find animation data for {:?}", self.current);
             self.frame += delta;
-            // self.start_animation(AnimType::Idle, None);
             return true;
         };
 
         if animation_data.process_timer(&mut self.frame, delta) {
-            self.current = AnimType::Idle;
+            if !self.loop_ {
+                self.start_animation(AnimType::Idle, Some(self.direction));
+            }
             true
         } else {
             false
@@ -47,19 +52,21 @@ impl NPCAnimation {
     }
 
     pub fn get_current_atlas(&self) -> Option<TextureAtlas> {
-        Some(TextureAtlas {
-            layout: self.spritesheet.atlas.as_ref()?.clone_weak(),
-            index: self.frame.floor() as usize
-                + (self
-                    .spritesheet
-                    .animations
-                    .iter()
-                    .enumerate()
-                    .find(|value| *value.1 == self.current)
-                    .map(|value| value.0)
-                    .unwrap_or(0)
-                    * self.spritesheet.max_items as usize),
-        })
+        let layout = self.spritesheet.atlas.as_ref()?.clone_weak();
+        let animation_index = self
+            .spritesheet
+            .animations
+            .iter()
+            .enumerate()
+            .find_map(|value| (*value.1 == self.current).then_some(value.0))
+            .unwrap_or(0);
+        let index =
+            self.frame.floor() as usize + (animation_index * self.spritesheet.max_items as usize);
+
+        if self.spritesheet.max_items == 2 {
+            log::info!("{:?}", (index, animation_index));
+        }
+        Some(TextureAtlas { layout, index })
     }
 
     pub fn frame(&self) -> f32 {
@@ -94,6 +101,7 @@ impl NPCAnimation {
     }
 
     pub fn start_animation(&mut self, animation: AnimType, direction: Option<Vec3>) {
+        self.loop_ = false;
         self.frame = 0.0;
         self.current = animation;
         if let Some(direction) = direction {
@@ -104,18 +112,39 @@ impl NPCAnimation {
 
 pub(super) fn update_sprite_timer(
     mut commands: Commands,
-    mut npcs: Query<(Entity, &mut NPCAnimation)>,
+    mut npcs: Query<(&mut NPCAnimation, &Children)>,
+    move_query: Query<&MoveInfo>,
     delta: Res<Time>,
 ) {
-    for (parent, mut anim) in &mut npcs {
+    for (mut anim, children) in &mut npcs {
         if anim.update(delta.delta_secs() * 3.) {
-            commands.entity(parent).despawn_descendants();
+            for child in children.iter() {
+                if move_query.get(*child).is_ok() {
+                    commands.entity(*child).despawn();
+                }
+            }
         }
     }
 }
 
-pub(super) fn update_npc_sprites(mut npcs: Query<(&mut Sprite3d, &NPCAnimation)>) {
-    for (mut sprite, anim) in &mut npcs {
-        sprite.texture_atlas = anim.get_current_atlas();
+pub(super) fn update_npc_sprites(
+    mut npcs: Query<(&mut Sprite3d, AnyOf<(&NPCAnimation, &MarkerUgh)>)>,
+    client: Single<Option<&NPCAnimation>, (With<Shaymin>, ())>,
+) {
+    for (mut sprite, options) in &mut npcs {
+        match options {
+            (Some(anim), Some(_)) => {
+                sprite.texture_atlas = anim.get_current_atlas();
+            }
+            (Some(anim), None) => {
+                sprite.texture_atlas = anim.get_current_atlas();
+            }
+            (None, Some(_)) => {
+                if let Some(a) = *client {
+                    sprite.texture_atlas = a.get_current_atlas();
+                };
+            }
+            _ => (),
+        }
     }
 }

@@ -1,12 +1,9 @@
-use std::cmp::Ordering;
-
-use super::anim_state::ShayminAnimation;
 use super::{Client, ClientQuery};
-use crate::tile::{TileDepth, TileFlags, TileSlope};
+use crate::npc::animation::NPCAnimation;
+use crate::tile::{TileFlags, TileSlope};
 use bevy::color::palettes;
 use bevy::prelude::*;
-use bevy_ecs_tilemap::tiles::TilePos;
-use short_flight::animation;
+use short_flight::animation::{self, AnimType};
 use short_flight::collision::{
     BasicCollider, ColliderShape, CollisionEnterEvent, CollisionExitEvent, CollisionLayers,
     DynamicCollision, StaticCollision, ZHitbox,
@@ -60,11 +57,7 @@ pub fn setup(shaymin: Client, mut commands: Commands) {
 
 pub fn control_shaymin(
     shaymin: ClientQuery<
-        (
-            &Transform,
-            &mut ShayminRigidbody,
-            Option<&mut ShayminAnimation>,
-        ),
+        (&Transform, &mut ShayminRigidbody, Option<&mut NPCAnimation>),
         Without<Camera3d>,
     >,
     camera: Option<Single<&mut Transform, With<Camera3d>>>,
@@ -79,22 +72,34 @@ pub fn control_shaymin(
         return;
     };
 
-    let current = anim.current;
-    let animation = anim.pool.get_mut(&current).unwrap();
-
-    if !animation.is_blocking() {
+    if !anim.animation_data().is_blocking() {
         let input = get_input(kb);
         let movement = time.delta_secs() * 30.;
-        anim.direction = input.xz();
-        if current == animation::Idle {
-            anim.current = animation::Walking;
-        }
         rigidbody.velocity = rigidbody
             .velocity
             .xz()
             .move_towards(input.xz() * 1.5, movement)
             .xxy()
             .with_y(rigidbody.velocity.y);
+        if input.length_squared() > 0.0 {
+            if rigidbody.velocity.z.abs() > rigidbody.velocity.x.abs()
+                && anim.current() != AnimType::Walking
+            {
+                anim.start_animation(animation::AnimType::Walking, Some(input));
+                anim.loop_ = true;
+            } else if rigidbody.velocity.x.abs() > rigidbody.velocity.z.abs()
+                && anim.current() != AnimType::WalkingRight
+            {
+                anim.start_animation(animation::AnimType::WalkingRight, Some(input));
+                anim.loop_ = true;
+            } else if rigidbody.velocity == Vec3::ZERO {
+                anim.start_animation(animation::AnimType::Idle, Some(input));
+            } else {
+                anim.loop_ = true;
+            }
+        } else {
+            anim.loop_ = false;
+        }
     }
 
     cam_transform.translation = transform.translation.with_y(transform.translation.y + 10.);

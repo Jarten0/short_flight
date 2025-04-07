@@ -28,12 +28,12 @@ impl Plugin for AssetsPlugin {
             .add_loading_state(
                 LoadingState::new(ShortFlightLoadingState::First)
                     .load_collection::<ldtk::MapAssets>()
+                    .load_collection::<player::assets::ShayminAssets>()
                     .on_failure_continue_to_state(ShortFlightLoadingState::FailState)
                     .continue_to_state(ShortFlightLoadingState::PlayerLoading),
             )
             .add_loading_state(
                 LoadingState::new(ShortFlightLoadingState::PlayerLoading)
-                    .load_collection::<player::assets::ShayminAssets>()
                     .on_failure_continue_to_state(ShortFlightLoadingState::FailState)
                     .continue_to_state(ShortFlightLoadingState::LoadNPCAssets),
             )
@@ -135,21 +135,25 @@ pub(super) struct AnimationSpritesheet {
     pub texture: Option<Handle<Image>>,
 }
 
-#[derive(Default)]
-struct AnimationSpritesheetLoader;
+impl AnimationSpritesheet {
+    pub fn new(
+        data: Vec<(AnimType, AnimationData)>,
+        sprite_size: UVec2,
+        texture: Handle<Image>,
+        asset_server: &AssetServer,
+    ) -> Self {
+        let mut s = Self {
+            animations: data.iter().map(|value| value.0).collect(),
+            sprite_size,
+            data: AnimationAssets(data.into_iter().collect()),
+            max_items: 0,
+            atlas: None,
+            texture: Some(texture),
+        };
 
-impl AssetLoader for AnimationSpritesheetLoader {
-    type Asset = AnimationSpritesheet;
-    type Settings = ();
-    type Error = RonAssetLoaderError;
+        s.atlas = Some(asset_server.add(dbg!(s.get_texture_atlas())));
 
-    async fn load(
-        &self,
-        reader: &mut dyn bevy::asset::io::Reader,
-        settings: &Self::Settings,
-        load_context: &mut bevy::asset::LoadContext<'_>,
-    ) -> Result<Self::Asset, Self::Error> {
-        todo!()
+        s
     }
 }
 

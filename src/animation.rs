@@ -14,6 +14,7 @@ pub enum AnimType {
     #[default]
     Idle,
     Walking,
+    WalkingRight,
     AttackSwipe,
     AttackTackle,
     Hurt,
@@ -46,6 +47,7 @@ impl AnimType {
         match self {
             Idle => false,
             Walking => false,
+            WalkingRight => false,
             _ => true,
         }
     }
@@ -55,9 +57,10 @@ impl AnimType {
             _ => true,
         }
     }
-    pub fn create_data(self) -> AnimationData {
+    pub fn create_data(self, frames: u32) -> AnimationData {
         AnimationData {
             variant: self,
+            frames,
             ..Default::default()
         }
     }

@@ -15,7 +15,7 @@ mod tile;
 fn main() {
     App::new()
         // builtin
-        .add_plugins(DefaultPlugins)
+        .add_plugins(DefaultPlugins.set(ImagePlugin::default_nearest()))
         .add_plugins(MeshPickingPlugin)
         // game
         .add_plugins(assets::AssetsPlugin)
