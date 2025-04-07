@@ -59,12 +59,19 @@ pub fn setup(shaymin: Client, mut commands: Commands) {
 }
 
 pub fn control_shaymin(
-    shaymin: ClientQuery<(&mut Transform, Option<&mut ShayminAnimation>), Without<Camera3d>>,
+    shaymin: ClientQuery<
+        (
+            &Transform,
+            &mut ShayminRigidbody,
+            Option<&mut ShayminAnimation>,
+        ),
+        Without<Camera3d>,
+    >,
     camera: Option<Single<&mut Transform, With<Camera3d>>>,
     kb: Res<ButtonInput<KeyCode>>,
-    delta: Res<Time<Fixed>>,
+    time: Res<Time>,
 ) {
-    let (mut transform, anim) = shaymin.into_inner();
+    let (transform, mut rigidbody, anim) = shaymin.into_inner();
 
     let mut cam_transform = camera.unwrap().into_inner();
 
@@ -76,53 +83,44 @@ pub fn control_shaymin(
     let animation = anim.pool.get_mut(&current).unwrap();
 
     if !animation.is_blocking() {
-        if let Some(movement) = manage_movement(kb, &mut transform, &delta) {
-            anim.direction = movement.xy();
-            if current == animation::Idle {
-                anim.current = animation::Walking;
-            }
-        };
+        let input = get_input(kb);
+        let movement = time.delta_secs() * 30.;
+        anim.direction = input.xz();
+        if current == animation::Idle {
+            anim.current = animation::Walking;
+        }
+        rigidbody.velocity = rigidbody
+            .velocity
+            .xz()
+            .move_towards(input.xz() * 1.5, movement)
+            .xxy()
+            .with_y(rigidbody.velocity.y);
     }
 
-    cam_transform.translation = {
-        let mut vec3 = transform.translation;
-        vec3.y += 10.0;
-        vec3
-    };
+    cam_transform.translation = transform.translation.with_y(transform.translation.y + 10.);
 }
 
-pub fn manage_movement(
-    kb: Res<ButtonInput<KeyCode>>,
-    transform: &mut Mut<Transform>,
-    delta: &Res<Time<Fixed>>,
-) -> Option<Vec3> {
-    if kb.pressed(KeyCode::ShiftLeft) {
-        return None;
-    }
-    if kb.pressed(KeyCode::Space) {
-        return None;
+pub fn get_input(kb: Res<ButtonInput<KeyCode>>) -> Vec3 {
+    let mut dir: Vec3 = Vec3::ZERO;
+
+    if kb.pressed(KeyCode::ShiftLeft) || kb.pressed(KeyCode::Space) {
+        return dir;
     }
 
-    let input = {
-        let mut dir: Vec3 = Vec3::ZERO;
-        if kb.pressed(KeyCode::KeyA) {
-            dir += Vec3::NEG_X
-        }
-        if kb.pressed(KeyCode::KeyD) {
-            dir += Vec3::X
-        }
-        if kb.pressed(KeyCode::KeyW) {
-            dir += Vec3::NEG_Z
-        }
-        if kb.pressed(KeyCode::KeyS) {
-            dir += Vec3::Z
-        }
+    if kb.pressed(KeyCode::KeyA) {
+        dir += Vec3::NEG_X
+    }
+    if kb.pressed(KeyCode::KeyD) {
+        dir += Vec3::X
+    }
+    if kb.pressed(KeyCode::KeyW) {
+        dir += Vec3::NEG_Z
+    }
+    if kb.pressed(KeyCode::KeyS) {
+        dir += Vec3::Z
+    }
 
-        dir
-    };
-    let movement = input * 1.5 * delta.delta_secs();
-    transform.translation += movement;
-    return Some(movement);
+    dir
 }
 
 pub fn draw_colliders(
@@ -197,33 +195,23 @@ pub fn update_rigidbodies(
     time: Res<Time>,
 ) {
     for (mut rigidbody, mut transform, gtransform, basic_collider) in &mut dyn_collision {
-        if let Some(ground) = rigidbody.grounded {
-            let first = basic_collider
-                .currently_colliding
-                .iter()
-                .filter_map(|value| tile_data_query.get(*value).ok())
-                .max_by(|item, item2| item.0.translation().y.total_cmp(&item2.0.translation().y));
-            let Some((gtransform2, slope, flags)) = first else {
-                rigidbody.grounded = None;
-                continue;
-            };
+        let tallest_entity = basic_collider
+            .currently_colliding
+            .iter()
+            .filter_map(|value| tile_data_query.get(*value).ok())
+            .max_by(|item, item2| item.0.translation().y.total_cmp(&item2.0.translation().y));
 
+        if let Some((gtransform2, slope, flags)) = tallest_entity {
             transform.translation.y = gtransform2.translation().y
                 + slope.get_height_at_point(
                     flags,
                     gtransform.translation().xz() - gtransform2.translation().xz(),
                 );
-        }
 
-        match rigidbody.grounded {
-            Some(s) => {
-                rigidbody.velocity.y = 0.0;
-            }
-            None => {
-                rigidbody.velocity.y -= 2.0 * time.delta_secs();
-            }
+            rigidbody.velocity.y = 0.0;
+        } else {
+            rigidbody.velocity.y -= 2.0 * time.delta_secs();
         }
-
         transform.translation += rigidbody.velocity * time.delta_secs();
     }
 }

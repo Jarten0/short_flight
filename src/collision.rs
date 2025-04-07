@@ -1,6 +1,6 @@
 use bevy::color::palettes;
 use bevy::prelude::*;
-use bevy::utils::HashSet;
+use bevy::utils::hashbrown::{HashMap, HashSet};
 use bitflags::bitflags;
 use serde::{Deserialize, Serialize};
 
@@ -10,6 +10,8 @@ impl Plugin for CollisionPlugin {
     fn build(&self, app: &mut App) {
         app.add_event::<CollisionEnterEvent>()
             .add_event::<CollisionExitEvent>()
+            .init_resource::<CollisionTracker>()
+            .register_type::<BasicCollider>()
             .add_systems(
                 FixedPostUpdate,
                 (
@@ -23,48 +25,19 @@ impl Plugin for CollisionPlugin {
                         bevy::transform::systems::propagate_transforms,
                         bevy::transform::systems::sync_simple_transforms,
                     ),
+                    process_collisions,
                     propogate_collision_events, // this will be changing Transform's after GlobalTransform is used
-                                                // GlobalTransforms will be finally updated in PostUpdate
+                    // GlobalTransforms will be finally updated in PostUpdate
+                    cleanup_collision_tracker,
                 )
                     .chain(),
             );
     }
 }
 
-/// Declares the height of the object as a range in the 2d collision system.
-///
-/// This effectively means that hitboxes can't vary in shape depending on height,
-/// but that's okay here because it's easier to read for top down gameplay.
-#[derive(Debug, Component, Default)]
-pub struct ZHitbox {
-    /// If anything is equal to, or below this value and above neg_y_tolerance, it may be collided with.
-    pub y_tolerance: f32,
-    /// If anything is equal to, or above this value and below y_tolerance, it may be collided with.
-    ///
-    /// Should always be negative, unless trying to offset the ZHitbox from the Z transform
-    pub neg_y_tolerance: f32,
-}
-
-impl ZHitbox {
-    #[inline]
-    pub fn height(&self) -> f32 {
-        self.y_tolerance + self.neg_y_tolerance
-    }
-
-    /// Returns `true` if the two ZHitboxes are intersecting, even if their transform x's and y's are distant.
-    pub fn intersecting(&self, other: &Self, self_y_offset: f32, other_y_offset: f32) -> bool {
-        let range = [
-            self.neg_y_tolerance + self_y_offset,
-            self.y_tolerance + self_y_offset,
-        ];
-        let range2 = [
-            other.neg_y_tolerance + other_y_offset,
-            other.y_tolerance + other_y_offset,
-        ];
-        let bottom_bound = (range[1] >= range2[0]) & (range2[1] >= range[0]);
-        let top_bound = (range[0] <= range2[1]) & (range2[0] <= range[1]);
-        bottom_bound & top_bound
-    }
+#[derive(Debug, Resource, Clone, Default, Serialize)]
+pub struct CollisionTracker {
+    pub current_collisions: HashMap<Entity, HashSet<(Entity, bool)>>,
 }
 
 /// Information for objects that move
@@ -154,6 +127,42 @@ impl Default for ColliderShape {
     }
 }
 
+/// Declares the height of the object as a range in the 2d collision system.
+///
+/// This effectively means that hitboxes can't vary in shape depending on height,
+/// but that's okay here because it's easier to read for top down gameplay.
+#[derive(Debug, Component, Default)]
+pub struct ZHitbox {
+    /// If anything is equal to, or below this value and above neg_y_tolerance, it may be collided with.
+    pub y_tolerance: f32,
+    /// If anything is equal to, or above this value and below y_tolerance, it may be collided with.
+    ///
+    /// Should always be negative, unless trying to offset the ZHitbox from the Z transform
+    pub neg_y_tolerance: f32,
+}
+
+impl ZHitbox {
+    #[inline]
+    pub fn height(&self) -> f32 {
+        self.y_tolerance + self.neg_y_tolerance
+    }
+
+    /// Returns `true` if the two ZHitboxes are intersecting, even if their transform x's and y's are distant.
+    pub fn intersecting(&self, other: &Self, self_y_offset: f32, other_y_offset: f32) -> bool {
+        let range = [
+            self.neg_y_tolerance + self_y_offset,
+            self.y_tolerance + self_y_offset,
+        ];
+        let range2 = [
+            other.neg_y_tolerance + other_y_offset,
+            other.y_tolerance + other_y_offset,
+        ];
+        let bottom_bound = (range[1] >= range2[0]) & (range2[1] >= range[0]);
+        let top_bound = (range[0] <= range2[1]) & (range2[0] <= range[1]);
+        bottom_bound & top_bound
+    }
+}
+
 #[derive(Debug, Event, Clone)]
 pub struct CollisionEnterEvent {
     pub this: Entity,
@@ -166,8 +175,7 @@ pub struct CollisionExitEvent {
     pub other: Entity,
 }
 
-fn query_overlaps(
-    mut commands: Commands,
+pub fn query_overlaps(
     dyn_objects: Query<(
         Entity,
         &GlobalTransform,
@@ -182,20 +190,37 @@ fn query_overlaps(
         &ZHitbox,
         AnyOf<(&DynamicCollision, &StaticCollision)>,
     )>,
-    mut collision_events: EventWriter<CollisionEnterEvent>,
-    mut collision_exit_events: EventWriter<CollisionExitEvent>,
     mut gizmos: Gizmos,
+    mut collision_tracker: ResMut<CollisionTracker>,
 ) {
     for (entity, transform, dyn_col, z_hitbox, dyn_info) in &dyn_objects {
+        let colliding: &mut HashSet<(Entity, bool)> =
+            match collision_tracker.current_collisions.get_mut(&entity) {
+                Some(some) => some,
+                None => {
+                    collision_tracker
+                        .current_collisions
+                        .insert(entity, HashSet::new());
+                    collision_tracker
+                        .current_collisions
+                        .get_mut(&entity)
+                        .unwrap()
+                }
+            };
+
         match &dyn_col.shape {
             ColliderShape::Rect(col_rect) => {
                 let rect = offset_rect(col_rect, transform);
                 for (entity2, transform2, col, z_hitbox2, (dyn_info2, stat_info2)) in &all_objects {
+                    if entity == entity2 {
+                        continue;
+                    }
+
                     if !dyn_col.can_interact.intersects(col.layers.clone()) {
                         continue;
                     }
 
-                    let result: bool = match &col.shape {
+                    let mut result: bool = match &col.shape {
                         ColliderShape::Rect(col_rect) => {
                             let rect2 = offset_rect(col_rect, transform2);
                             !rect.intersect(rect2).is_empty()
@@ -212,37 +237,13 @@ fn query_overlaps(
                         ColliderShape::Mesh(handle) => unimplemented!(),
                     };
 
-                    if !z_hitbox.intersecting(
+                    result &= z_hitbox.intersecting(
                         z_hitbox2,
                         transform.translation().y,
                         transform2.translation().y,
-                    ) {
-                        continue;
-                    }
+                    );
 
-                    if result && !dyn_col.currently_colliding.contains(&entity2) {
-                        commands
-                            .entity(entity)
-                            .trigger(CollisionEnterEvent {
-                                this: entity,
-                                other: entity2,
-                            })
-                            .queue(DeferCollidingUpdate {
-                                enter: true,
-                                other: entity2,
-                            });
-                    } else if !result && dyn_col.currently_colliding.contains(&entity2) {
-                        commands
-                            .entity(entity)
-                            .trigger(CollisionExitEvent {
-                                this: entity,
-                                other: entity2,
-                            })
-                            .queue(DeferCollidingUpdate {
-                                enter: false,
-                                other: entity2,
-                            });
-                    }
+                    colliding.insert((entity2, result));
                 }
             }
             ColliderShape::Circle(radius) => {
@@ -251,15 +252,11 @@ fn query_overlaps(
                 const DRAW_GIZMOS: bool = false;
 
                 for (entity2, transform2, col, z_hitbox2, (dyn_info2, stat_info2)) in &all_objects {
-                    if !z_hitbox.intersecting(
-                        z_hitbox2,
-                        transform.translation().y,
-                        transform2.translation().y,
-                    ) {
+                    if entity == entity2 {
                         continue;
                     }
 
-                    let result: bool = match &col.shape {
+                    let mut result: bool = match &col.shape {
                         ColliderShape::Rect(col_rect) => {
                             let rect = offset_rect(col_rect, transform2);
 
@@ -308,33 +305,56 @@ fn query_overlaps(
                         ColliderShape::Mesh(handle) => unimplemented!(),
                     };
 
-                    if result && !dyn_col.currently_colliding.contains(&entity2) {
-                        commands
-                            .entity(entity)
-                            .trigger(CollisionEnterEvent {
-                                this: entity,
-                                other: entity2,
-                            })
-                            .queue(DeferCollidingUpdate {
-                                enter: true,
-                                other: entity2,
-                            });
-                    } else if !result && dyn_col.currently_colliding.contains(&entity2) {
-                        commands
-                            .entity(entity)
-                            .trigger(CollisionExitEvent {
-                                this: entity,
-                                other: entity2,
-                            })
-                            .queue(DeferCollidingUpdate {
-                                enter: false,
-                                other: entity2,
-                            });
-                    }
+                    result &= z_hitbox.intersecting(
+                        z_hitbox2,
+                        transform.translation().y,
+                        transform2.translation().y,
+                    );
+
+                    colliding.insert((entity2, result));
                 }
             }
             ColliderShape::Mesh(handle) => unimplemented!(),
         }
+    }
+}
+
+pub fn process_collisions(collision_tracker: Res<CollisionTracker>, mut commands: Commands) {
+    for (entity, colliding) in &collision_tracker.current_collisions {
+        let entity = *entity;
+        for (entity2, result) in colliding {
+            let entity2 = *entity2;
+            if *result {
+                commands
+                    .entity(entity)
+                    .trigger(CollisionEnterEvent {
+                        this: entity,
+                        other: entity2,
+                    })
+                    .queue(DeferCollidingUpdate {
+                        enter: true,
+                        other: entity2,
+                    });
+            } else {
+                commands
+                    .entity(entity)
+                    .trigger(CollisionExitEvent {
+                        this: entity,
+                        other: entity2,
+                    })
+                    .queue(DeferCollidingUpdate {
+                        enter: false,
+                        other: entity2,
+                    });
+            }
+        }
+    }
+}
+
+/// Deferred functionality for removing any collision trackings for collision exits
+pub fn cleanup_collision_tracker(mut collision_tracker: ResMut<CollisionTracker>) {
+    for (_, colliding) in &mut collision_tracker.current_collisions {
+        colliding.clear();
     }
 }
 
@@ -358,7 +378,7 @@ fn offset_rect(col_rect: &Rect, transform: &GlobalTransform) -> Rect {
     rect
 }
 
-fn propogate_collision_events(
+pub fn propogate_collision_events(
     mut events: EventReader<CollisionEnterEvent>,
     mut events2: EventReader<CollisionExitEvent>,
     mut commands: Commands,
@@ -384,7 +404,6 @@ struct DeferCollidingUpdate {
 
 impl EntityCommand for DeferCollidingUpdate {
     fn apply(self, entity: Entity, world: &mut World) {
-        log::info!("{}", self.enter);
         if self.enter {
             world
                 .get_mut::<BasicCollider>(entity)
