@@ -2,15 +2,14 @@ use super::assets::ShayminAssets;
 use crate::assets::AnimationSpritesheet;
 use crate::npc::animation::NPCAnimation;
 use bevy::prelude::*;
-use bevy_sprite3d::prelude::*;
-use short_flight::animation::AnimType;
+use short_flight::animation::{AnimType, AnimationDirLabel};
+use short_flight::sprite3d::Sprite3dBuilder;
 
 pub fn animation(asset_server: &AssetServer, assets: &ShayminAssets) -> impl Bundle {
     NPCAnimation::new(AnimationSpritesheet::new(
         vec![
-            (AnimType::Idle.create_data(2)),
-            (AnimType::WalkingRight.create_data(2)),
-            (AnimType::Walking.create_data(2)),
+            (AnimType::Idle.create_data(2, AnimationDirLabel::None)),
+            (AnimType::Walking.create_data(2, AnimationDirLabel::FullyDirectional)),
         ]
         .into_iter()
         .map(|value| (value.variant, value))

@@ -5,7 +5,7 @@ use super::animation::NPCAnimation;
 use super::{animation, file::NPCAlmanac, file::NPCData, NPCInfo, NPC};
 use bevy::ecs::system::SystemState;
 use bevy::prelude::*;
-use bevy_sprite3d::{Sprite3d, Sprite3dBuilder, Sprite3dParams};
+use short_flight::sprite3d::{Sprite3d, Sprite3dBuilder, Sprite3dParams};
 use short_flight::collision::{BasicCollider, ColliderShape, CollisionLayers};
 
 /// Spawns an NPC with the given NPC asset data

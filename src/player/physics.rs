@@ -82,15 +82,13 @@ pub fn control_shaymin(
             .xxy()
             .with_y(rigidbody.velocity.y);
         if input.length_squared() > 0.0 {
-            if rigidbody.velocity.z.abs() > rigidbody.velocity.x.abs()
-                && anim.current() != AnimType::Walking
-            {
+            let input = Dir2::new(input.xz().normalize_or(Vec2::NEG_Y)).unwrap();
+
+            let new_cardinal = cardinal(input) != cardinal(anim.direction())
+                || anim.current() != AnimType::Walking;
+
+            if new_cardinal {
                 anim.start_animation(animation::AnimType::Walking, Some(input));
-                anim.loop_ = true;
-            } else if rigidbody.velocity.x.abs() > rigidbody.velocity.z.abs()
-                && anim.current() != AnimType::WalkingRight
-            {
-                anim.start_animation(animation::AnimType::WalkingRight, Some(input));
                 anim.loop_ = true;
             } else if rigidbody.velocity == Vec3::ZERO {
                 anim.start_animation(animation::AnimType::Idle, Some(input));
@@ -103,6 +101,14 @@ pub fn control_shaymin(
     }
 
     cam_transform.translation = transform.translation.with_y(transform.translation.y + 10.);
+}
+
+fn cardinal(input: Dir2) -> Vec2 {
+    if input.x.abs() > input.y.abs() {
+        input.abs().with_y(0.0).normalize()
+    } else {
+        input.abs().with_x(0.0).normalize()
+    }
 }
 
 pub fn get_input(kb: Res<ButtonInput<KeyCode>>) -> Vec3 {

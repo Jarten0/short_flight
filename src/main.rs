@@ -29,7 +29,7 @@ fn main() {
         // third party
         .add_plugins(bevy_ecs_tilemap::TilemapPlugin)
         .add_plugins(bevy_inspector_egui::quick::WorldInspectorPlugin::default())
-        .add_plugins(bevy_sprite3d::Sprite3dPlugin)
+        .add_plugins(short_flight::sprite3d::Sprite3dPlugin)
         .add_plugins(bevy_editor_cam::DefaultEditorCamPlugins)
         .add_plugins(bevy::remote::RemotePlugin::default())
         .add_plugins(bevy::remote::http::RemoteHttpPlugin::default())

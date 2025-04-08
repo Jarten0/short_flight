@@ -46,10 +46,14 @@ fn tackle(
 
         match anim.frame() {
             0.0..2.0 => {
-                transform.translation += anim.direction() * time.delta_secs() * 4.;
+                transform.translation += (anim.direction() * time.delta_secs() * 4.0)
+                    .xxy()
+                    .with_y(0.0);
             }
             2.0..3.0 => {
-                transform.translation += anim.direction() * time.delta_secs() * 0.5;
+                transform.translation += (anim.direction() * time.delta_secs() * 0.5)
+                    .xxy()
+                    .with_y(0.0);
             }
             _ => (),
         }

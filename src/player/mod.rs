@@ -1,13 +1,10 @@
 use crate::assets::AnimationAssets;
-use crate::assets::{RonAssetLoader, ShortFlightLoadingState};
+use crate::assets::ShortFlightLoadingState;
 use crate::npc::animation::NPCAnimation;
 use assets::ShayminAssets;
-use bevy::ecs::system::SystemState;
 use bevy::prelude::*;
-use bevy_asset_loader::loading_state::LoadingStateAppExt;
-use bevy_asset_loader::prelude::*;
-use bevy_sprite3d::prelude::*;
-use short_flight::animation::AnimType;
+use short_flight::animation::{AnimType, AnimationDirLabel};
+use short_flight::sprite3d::Sprite3dParams;
 
 mod anim_state;
 pub mod assets;
@@ -99,12 +96,12 @@ fn retry(mut commands: Commands, asset_server: Res<AssetServer>) {
     let shaymin = asset_server.load::<Image>("shaymin/shaymin.png");
     let asset = {
         let hash_map = [
-            AnimType::Idle.create_data(1),
-            AnimType::Walking.create_data(1),
-            AnimType::Hurt.create_data(1),
-            AnimType::Down.create_data(1),
-            AnimType::AttackSwipe.create_data(1),
-            AnimType::AttackTackle.create_data(1),
+            AnimType::Idle.create_data(1, AnimationDirLabel::None),
+            AnimType::Walking.create_data(1, AnimationDirLabel::None),
+            AnimType::Hurt.create_data(1, AnimationDirLabel::None),
+            AnimType::Down.create_data(1, AnimationDirLabel::None),
+            AnimType::AttackSwipe.create_data(1, AnimationDirLabel::None),
+            AnimType::AttackTackle.create_data(1, AnimationDirLabel::None),
         ]
         .into_iter()
         .map(|animation| (animation.variant, animation))

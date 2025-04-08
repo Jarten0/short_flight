@@ -77,7 +77,7 @@ bevy_asset_loader = { version = "0.22.0", features = [
 bevy_ecs_tilemap = "0.15.0"
 bevy_editor_cam = "0.5.0"
 bevy_picking = "0.15.1"
-bevy_sprite3d = "4.0.0"
+# bevy_sprite3d = "4.0.0" # original repo @ https://github.com/FraserLee/bevy_sprite3d, cloned and modified in sprite3d.rs
 bitflags = { version = "2.9.0", features = ["serde"] }
 enum-iterator = "2.1.0"
 image = "0.25.5"

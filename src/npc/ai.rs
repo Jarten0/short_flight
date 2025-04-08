@@ -31,7 +31,7 @@ pub enum NPCDesicion {
         direction: Vec3,
     },
     Attack {
-        direction: Vec2,
+        direction: Option<Dir2>,
     },
 }
 
@@ -95,7 +95,7 @@ pub(crate) fn run_enemy_npc_ai(
 
                 if distance.length_squared() <= attack_range.powi(2) {
                     NPCDesicion::Attack {
-                        direction: distance.normalize_or_zero().xy(),
+                        direction: Dir2::new(distance.normalize_or_zero().xy()).ok(),
                     }
                 } else {
                     NPCDesicion::Move {
@@ -161,10 +161,7 @@ pub(crate) fn commit_npc_actions(
             }
             NPCDesicion::Attack { direction } => {
                 if !anim.animation_data().is_blocking() {
-                    anim.start_animation(
-                        AnimType::AttackTackle,
-                        Some(Vec3::from((*direction, 0.0)).xzy()),
-                    );
+                    anim.start_animation(AnimType::AttackTackle, *direction);
                     commands.queue(SpawnMove {
                         move_: Tackle,
                         parent: entity,

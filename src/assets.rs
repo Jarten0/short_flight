@@ -119,16 +119,16 @@ where
 
 #[derive(Debug, Default, Asset, Reflect, Serialize, Deserialize, Clone)]
 #[serde(transparent)]
-pub(super) struct AnimationAssets(pub HashMap<AnimType, AnimationData>);
+pub(crate) struct AnimationAssets(pub HashMap<AnimType, AnimationData>);
 
 /// An ordered layout of corresponding animation data for a given spritesheet
 #[derive(Debug, Default, Asset, Reflect, Deserialize, Serialize, Clone)]
-pub(super) struct AnimationSpritesheet {
+pub(crate) struct AnimationSpritesheet {
     pub animations: Vec<AnimType>,
     pub sprite_size: UVec2,
     pub data: AnimationAssets,
     #[serde(skip)]
-    pub max_items: u32,
+    pub max_frames: u32,
     #[serde(skip)]
     pub atlas: Option<Handle<TextureAtlasLayout>>,
     #[serde(skip)]
@@ -146,7 +146,7 @@ impl AnimationSpritesheet {
             animations: data.iter().map(|value| value.0).collect(),
             sprite_size,
             data: AnimationAssets(data.into_iter().collect()),
-            max_items: 0,
+            max_frames: 0,
             atlas: None,
             texture: Some(texture),
         };
@@ -167,17 +167,23 @@ impl std::ops::Index<AnimType> for AnimationSpritesheet {
 
 impl AnimationSpritesheet {
     pub fn get_texture_atlas(&mut self) -> TextureAtlasLayout {
-        self.max_items = self
+        self.max_frames = self
             .data
             .0
             .iter()
             .map(|data| data.1.frames)
             .max()
             .unwrap_or(0);
+        let animation_counts = self
+            .data
+            .0
+            .iter()
+            .map(|(_, value)| value.direction_label.directional_sprite_count())
+            .sum();
         TextureAtlasLayout::from_grid(
             self.sprite_size,
-            self.max_items,
-            self.animations.len() as u32,
+            self.max_frames,
+            animation_counts,
             None,
             None,
         )

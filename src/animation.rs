@@ -1,6 +1,4 @@
-use std::collections::HashMap;
-
-use bevy::asset::Asset;
+use bevy::prelude::*;
 use bevy::reflect::Reflect;
 use serde::{Deserialize, Serialize};
 pub use AnimType::*;
@@ -11,10 +9,10 @@ pub use AnimType::*;
     Debug, Default, Clone, Copy, PartialEq, PartialOrd, Eq, Hash, Reflect, Serialize, Deserialize,
 )]
 pub enum AnimType {
+    /// default, with direction as right
     #[default]
     Idle,
     Walking,
-    WalkingRight,
     AttackSwipe,
     AttackTackle,
     Hurt,
@@ -47,7 +45,6 @@ impl AnimType {
         match self {
             Idle => false,
             Walking => false,
-            WalkingRight => false,
             _ => true,
         }
     }
@@ -57,10 +54,11 @@ impl AnimType {
             _ => true,
         }
     }
-    pub fn create_data(self, frames: u32) -> AnimationData {
+    pub fn create_data(self, frames: u32, directions: AnimationDirLabel) -> AnimationData {
         AnimationData {
             variant: self,
             frames,
+            direction_label: directions,
             ..Default::default()
         }
     }
@@ -74,6 +72,9 @@ pub struct AnimationData {
     #[serde(alias = "length")]
     #[serde(alias = "time")]
     pub frames: u32,
+    #[serde(default)]
+    #[serde(alias = "direction")]
+    pub direction_label: AnimationDirLabel,
     #[serde(flatten)]
     #[serde(default)]
     #[serde(alias = "can_move")]
@@ -107,5 +108,97 @@ impl AnimationData {
             return ovr;
         }
         return self.variant.blocks();
+    }
+}
+
+/// Label for what direction(s) this animation is facing.
+/// Depending on the animation, it may have multiple directions.
+///
+/// By default, horizontal variants should face [`Dir2::EAST`] and vertical (or non-directional) variants should face [`Dir2::SOUTH`].
+///
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Default, Reflect)]
+pub enum AnimationDirLabel {
+    #[default]
+    /// This animation does not get flipped and always appears like this.
+    None,
+    /// Has a secondary, vertical variant.
+    Vertical,
+    /// Has a secondary, horizontal variant.
+    Horizontal,
+    /// Has both a horizontal and vertical variant, which can be flipped to get opposite directions.
+    FlipVariants,
+    /// Has a "front" and "back" variant, as well as a "Side" horizontal variant that is flipped for side views.
+    FrontBackAndHorizontal,
+    /// No need to flip, all four directions are contained
+    FullyDirectional,
+}
+
+impl AnimationDirLabel {
+    pub fn directional_sprite_count(self) -> u32 {
+        match self {
+            AnimationDirLabel::None => 1,
+            AnimationDirLabel::Vertical => 2,
+            AnimationDirLabel::Horizontal => 2,
+            AnimationDirLabel::FlipVariants => 2,
+            AnimationDirLabel::FrontBackAndHorizontal => 3,
+            AnimationDirLabel::FullyDirectional => 4,
+        }
+    }
+
+    /// 0. index
+    /// 1. flip horizontally
+    /// 2. flip vertically
+    pub fn get_index_offset(self, cardinal_dir: Dir2) -> (usize, bool) {
+        assert_eq!(cardinal_dir.length_squared(), 1.0);
+        assert_eq!(
+            cardinal_dir.abs().max_element(),
+            1.0,
+            "The input direction {:?} is not in a cardinal direction",
+            cardinal_dir
+        );
+
+        match self {
+            AnimationDirLabel::None => (0, false),
+            AnimationDirLabel::Vertical => match cardinal_dir {
+                Dir2::SOUTH => (0, false),
+                Dir2::NORTH => (1, false),
+                _ => panic!("Impossible(?) direction variant matched."),
+            },
+            AnimationDirLabel::Horizontal => match cardinal_dir {
+                Dir2::EAST => (0, false),
+                Dir2::WEST => (1, false),
+                _ => panic!("Impossible(?) direction variant matched."),
+            },
+            AnimationDirLabel::FlipVariants => match cardinal_dir {
+                Dir2::NORTH => (0, false),
+                Dir2::SOUTH => (0, true),
+                Dir2::EAST => (1, false),
+                Dir2::WEST => (1, true),
+                _ => panic!("Impossible(?) direction variant matched."),
+            },
+            AnimationDirLabel::FrontBackAndHorizontal => match cardinal_dir {
+                Dir2::NORTH => (0, false),
+                Dir2::SOUTH => (1, false),
+                Dir2::EAST => (2, false),
+                Dir2::WEST => (2, true),
+                _ => panic!("Impossible(?) direction variant matched."),
+            },
+            AnimationDirLabel::FullyDirectional => match cardinal_dir {
+                Dir2::EAST => (0, false),
+                Dir2::NORTH => (1, false),
+                Dir2::WEST => (2, false),
+                Dir2::SOUTH => (3, false),
+                _ => panic!("Impossible(?) direction variant matched."),
+            },
+        }
+    }
+
+    pub fn cardinal(input: Dir2) -> Dir2 {
+        Dir2::new(if input.x.abs() >= input.y.abs() {
+            input.with_y(0.0).normalize()
+        } else {
+            input.with_x(0.0).normalize()
+        })
+        .expect("bath mamphs ;(")
     }
 }
