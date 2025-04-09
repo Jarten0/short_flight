@@ -130,6 +130,8 @@ pub(crate) struct AnimationSpritesheet {
     #[serde(skip)]
     pub max_frames: u32,
     #[serde(skip)]
+    pub total_variants: u32,
+    #[serde(skip)]
     pub atlas: Option<Handle<TextureAtlasLayout>>,
     #[serde(skip)]
     pub texture: Option<Handle<Image>>,
@@ -142,18 +144,17 @@ impl AnimationSpritesheet {
         texture: Handle<Image>,
         asset_server: &AssetServer,
     ) -> Self {
-        let mut s = Self {
+        let mut spritesheet = Self {
             animations: data.iter().map(|value| value.0).collect(),
-            sprite_size,
             data: AnimationAssets(data.into_iter().collect()),
-            max_frames: 0,
-            atlas: None,
             texture: Some(texture),
+            sprite_size,
+            ..Default::default()
         };
 
-        s.atlas = Some(asset_server.add(dbg!(s.get_texture_atlas())));
+        spritesheet.atlas = Some(asset_server.add(spritesheet.get_atlas_layout()));
 
-        s
+        spritesheet
     }
 }
 
@@ -166,7 +167,7 @@ impl std::ops::Index<AnimType> for AnimationSpritesheet {
 }
 
 impl AnimationSpritesheet {
-    pub fn get_texture_atlas(&mut self) -> TextureAtlasLayout {
+    pub fn get_atlas_layout(&mut self) -> TextureAtlasLayout {
         self.max_frames = self
             .data
             .0
@@ -174,7 +175,7 @@ impl AnimationSpritesheet {
             .map(|data| data.1.frames)
             .max()
             .unwrap_or(0);
-        let animation_counts = self
+        self.total_variants = self
             .data
             .0
             .iter()
@@ -183,7 +184,7 @@ impl AnimationSpritesheet {
         TextureAtlasLayout::from_grid(
             self.sprite_size,
             self.max_frames,
-            animation_counts,
+            self.total_variants,
             None,
             None,
         )

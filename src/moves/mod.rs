@@ -34,14 +34,23 @@ pub enum Move {
     MagicalLeaf,
 }
 
-fn register_component(input: Move) -> for<'a> fn(&'a mut bevy::prelude::App) {
+fn register_component(input: Move) -> Box<dyn MoveComponent> {
     match input {
-        Move::Void => void,
-        Move::Tackle => tackle::Tackle::build,
-        Move::MagicalLeaf => magical_leaf::MagicalLeaf::build,
+        Move::Void => panic!(),
+        Move::Tackle => Box::new(tackle::Tackle),
+        Move::MagicalLeaf => Box::new(magical_leaf::MagicalLeaf),
         // _ => void,
     }
 }
+
+// fn register_component(input: Move) -> for<'a> fn(&'a mut bevy::prelude::App) {
+//     match input {
+//         Move::Void => void,
+//         Move::Tackle => tackle::Tackle::build,
+//         Move::MagicalLeaf => magical_leaf::MagicalLeaf::build,
+//         // _ => void,
+//     }
+// }
 
 fn void(_: &mut App) {}
 
@@ -54,6 +63,7 @@ pub mod interfaces {
     use bevy_asset_loader::asset_collection::AssetCollection;
     use bevy_asset_loader::mapped::MapKey;
     use serde::{Deserialize, Serialize};
+    use short_flight::animation::AnimType;
     use short_flight::collision::ColliderShape;
 
     /// This component operates with the move system
@@ -65,22 +75,23 @@ pub mod interfaces {
         where
             Self: Sized;
 
-        /// Return the variant dedicated to this component type.
-        fn variant() -> super::Move
-        where
-            Self: Sized;
+        // /// Return the variant dedicated to this component type.
+        // fn variant(&self) -> super::Move;
 
         /// Called whenever a move entity is spawned, right before this is inserted into the entity.
-        fn on_spawn(&mut self, world: &mut World, entity: Entity, move_data: &MoveData) {}
+        fn on_spawn(&mut self, world: &mut World, entity: Entity, move_data: &MoveData) {
+            // world.entity_mut(entity).insert(Self);
+        }
     }
 
     pub struct MovePlugin;
 
     impl Plugin for MovePlugin {
         fn build(&self, app: &mut App) {
-            for input in enum_iterator::all::<Move>() {
-                register_component(input)(app);
-            }
+            enum_iterator::all::<Move>()
+                .into_iter()
+                .map(|input| register_component(input))
+                .for_each(|a| {});
         }
     }
 
@@ -99,6 +110,9 @@ pub mod interfaces {
         pub image: HashMap<Move, Handle<Image>>,
     }
 
+    #[derive(Resource, Deref, DerefMut)]
+    pub(crate) struct MoveInterfaces(HashMap<Move, Box<dyn MoveComponent>>);
+
     #[derive(Debug, Asset, Reflect, Serialize, Deserialize, Clone, Default)]
     pub(crate) struct MoveData {
         pub(crate) display_name: String,
@@ -115,20 +129,16 @@ pub mod interfaces {
         }
     }
 
-    pub struct SpawnMove<T: MoveComponent + Component> {
-        pub(crate) move_: T,
+    pub struct SpawnMove {
+        pub(crate) move_id: Move,
         pub(crate) parent: Entity,
     }
 
-    impl<T> Command for SpawnMove<T>
-    where
-        T: Component + MoveComponent,
-    {
+    impl Command for SpawnMove {
         fn apply(mut self, world: &mut World) {
-            let move_id = T::variant();
             let move_list = world.resource::<MoveList>();
-            let Some(handle) = move_list.data.get(&move_id) else {
-                log::error!("Could not find move data file for {:?}", move_id);
+            let Some(handle) = move_list.data.get(&self.move_id) else {
+                log::error!("Could not find move data file for {:?}", self.move_id);
                 return;
             };
 
@@ -140,17 +150,21 @@ pub mod interfaces {
 
             let bundle = (
                 Name::new(move_data.display_name.clone()),
-                move_id,
+                self.move_id,
                 MoveInfo {
-                    id: move_id,
+                    id: self.move_id,
                     data: handle.clone(),
                 },
             );
             let entity = world.spawn(bundle).set_parent(self.parent).id();
 
-            self.move_.on_spawn(world, entity, &move_data);
-
-            world.entity_mut(entity).insert(self.move_);
+            world.resource_scope(|world, mut move_interfaces: Mut<MoveInterfaces>| {
+                let Some(interface) = move_interfaces.get_mut(&self.move_id) else {
+                    log::error!("No interface found for {:?}", self.move_id);
+                    return;
+                };
+                interface.on_spawn(world, entity, &move_data);
+            });
         }
     }
 }

@@ -274,6 +274,7 @@ impl Default for Sprite3dBuilder {
 pub struct Sprite3d {
     pub texture_atlas: Option<TextureAtlas>,
     pub texture_atlas_keys: Option<Vec<[u32; 9]>>,
+    pub flip: BVec2,
 }
 
 #[derive(Bundle)]
@@ -301,6 +302,7 @@ impl Sprite3dBuilder {
             sprite_3d: Sprite3d {
                 texture_atlas: None,
                 texture_atlas_keys: None,
+                flip: BVec2::default(),
             },
             mesh: {
                 let pivot = self.pivot.unwrap_or(Vec2::new(0.5, 0.5));
@@ -478,6 +480,7 @@ impl Sprite3dBuilder {
             sprite_3d: Sprite3d {
                 texture_atlas: Some(atlas),
                 texture_atlas_keys: Some(mesh_keys),
+                flip: BVec2::default(),
             },
         };
     }

@@ -37,7 +37,7 @@ pub(crate) fn validate_npc_data(
     for (id, data) in npc_datas.iter_mut() {
         assert!(data.stats.is_some());
         assert!(data.collider.is_some());
-        data.spritesheet.atlas = Some(asset_server.add(data.spritesheet.get_texture_atlas()));
+        data.spritesheet.atlas = Some(asset_server.add(data.spritesheet.get_atlas_layout()));
         assert!(data.spritesheet.atlas.is_some());
     }
 }

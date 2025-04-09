@@ -146,9 +146,8 @@ impl AnimationDirLabel {
     }
 
     /// 0. index
-    /// 1. flip horizontally
-    /// 2. flip vertically
-    pub fn get_index_offset(self, cardinal_dir: Dir2) -> (usize, bool) {
+    /// 1. flip
+    pub fn get_index_offset(self, cardinal_dir: Dir2) -> (usize, BVec2) {
         assert_eq!(cardinal_dir.length_squared(), 1.0);
         assert_eq!(
             cardinal_dir.abs().max_element(),
@@ -158,36 +157,36 @@ impl AnimationDirLabel {
         );
 
         match self {
-            AnimationDirLabel::None => (0, false),
+            AnimationDirLabel::None => (0, BVec2::FALSE),
             AnimationDirLabel::Vertical => match cardinal_dir {
-                Dir2::SOUTH => (0, false),
-                Dir2::NORTH => (1, false),
+                Dir2::SOUTH => (0, BVec2::FALSE),
+                Dir2::NORTH => (1, BVec2::FALSE),
                 _ => panic!("Impossible(?) direction variant matched."),
             },
             AnimationDirLabel::Horizontal => match cardinal_dir {
-                Dir2::EAST => (0, false),
-                Dir2::WEST => (1, false),
+                Dir2::EAST => (0, BVec2::FALSE),
+                Dir2::WEST => (1, BVec2::FALSE),
                 _ => panic!("Impossible(?) direction variant matched."),
             },
             AnimationDirLabel::FlipVariants => match cardinal_dir {
-                Dir2::NORTH => (0, false),
-                Dir2::SOUTH => (0, true),
-                Dir2::EAST => (1, false),
-                Dir2::WEST => (1, true),
+                Dir2::NORTH => (0, BVec2::FALSE),
+                Dir2::SOUTH => (0, BVec2 { x: false, y: true }),
+                Dir2::EAST => (1, BVec2::FALSE),
+                Dir2::WEST => (1, BVec2 { x: true, y: false }),
                 _ => panic!("Impossible(?) direction variant matched."),
             },
             AnimationDirLabel::FrontBackAndHorizontal => match cardinal_dir {
-                Dir2::NORTH => (0, false),
-                Dir2::SOUTH => (1, false),
-                Dir2::EAST => (2, false),
-                Dir2::WEST => (2, true),
+                Dir2::NORTH => (0, BVec2::FALSE),
+                Dir2::SOUTH => (1, BVec2::FALSE),
+                Dir2::EAST => (2, BVec2::FALSE),
+                Dir2::WEST => (2, BVec2 { x: true, y: false }),
                 _ => panic!("Impossible(?) direction variant matched."),
             },
             AnimationDirLabel::FullyDirectional => match cardinal_dir {
-                Dir2::EAST => (0, false),
-                Dir2::NORTH => (1, false),
-                Dir2::WEST => (2, false),
-                Dir2::SOUTH => (3, false),
+                Dir2::EAST => (0, BVec2::FALSE),
+                Dir2::NORTH => (1, BVec2::FALSE),
+                Dir2::WEST => (2, BVec2::FALSE),
+                Dir2::SOUTH => (3, BVec2::FALSE),
                 _ => panic!("Impossible(?) direction variant matched."),
             },
         }

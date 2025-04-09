@@ -12,12 +12,12 @@ impl MoveComponent for Tackle {
         app.add_systems(FixedUpdate, tackle);
     }
 
-    fn variant() -> super::Move
-    where
-        Self: Sized,
-    {
-        super::Move::Tackle
-    }
+    // fn variant(&self) -> super::Move
+    // where
+    //     Self: Sized,
+    // {
+    //     super::Move::Tackle
+    // }
 
     fn on_spawn(&mut self, world: &mut World, entity: Entity, move_data: &MoveData) {
         world.entity_mut(entity).insert((

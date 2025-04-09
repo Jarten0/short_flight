@@ -2,8 +2,10 @@ use super::NPC;
 use crate::assets::AnimationSpritesheet;
 use crate::moves::interfaces::MoveInfo;
 use crate::player::{ClientQuery, MarkerUgh, Shaymin};
+use bevy::math::Affine2;
 use bevy::prelude::*;
 use bevy::utils::HashMap;
+use bevy_inspector_egui::egui::epaint::text::layout;
 use short_flight::animation::{AnimType, AnimationData, AnimationDirLabel};
 use short_flight::sprite3d::Sprite3d;
 
@@ -51,9 +53,22 @@ impl NPCAnimation {
         }
     }
 
-    pub fn get_current_atlas(&self) -> Option<(TextureAtlas, bool)> {
-        let layout = self.spritesheet.atlas.as_ref()?.clone_weak();
+    pub fn get_current_atlas(&self) -> Option<TextureAtlas> {
+        let Some(handle) = self.spritesheet.atlas.as_ref() else {
+            return (None);
+        };
+        let layout = handle.clone_weak();
 
+        let Some((index, _)) = self.get_atlas_index() else {
+            return (None);
+        };
+
+        let index = self.frame.floor() as usize + (index * self.spritesheet.max_frames as usize);
+
+        (Some(TextureAtlas { layout, index }))
+    }
+
+    fn get_atlas_index(&self) -> Option<(usize, BVec2)> {
         let mut index = 0;
         for id in &self.spritesheet.animations {
             if self.current == *id {
@@ -62,17 +77,17 @@ impl NPCAnimation {
             index += self.animations[id]
                 .direction_label
                 .directional_sprite_count() as usize;
+
+            if Some(id) == self.spritesheet.animations.last() {
+                return None;
+            }
         }
         let (offset, flip) = self
             .animation_data()
             .direction_label
             .get_index_offset(AnimationDirLabel::cardinal(self.direction));
-
         index += offset;
-
-        let index = self.frame.floor() as usize + (index * self.spritesheet.max_frames as usize);
-
-        Some((TextureAtlas { layout, index }, flip))
+        Some((index, flip))
     }
 
     pub fn frame(&self) -> f32 {
@@ -110,6 +125,7 @@ impl NPCAnimation {
         self.direction = direction;
     }
 
+    /// Should only be called if [`AnimationData::is_blocking`] is false
     pub fn start_animation(&mut self, animation: AnimType, direction: Option<Dir2>) {
         self.loop_ = false;
         self.frame = 0.0;
@@ -138,32 +154,59 @@ pub(super) fn update_sprite_timer(
 }
 
 pub(super) fn update_npc_sprites(
-    mut npcs: Query<(&mut Sprite3d, AnyOf<(&NPCAnimation, &MarkerUgh)>)>,
-    client: Single<Option<&NPCAnimation>, (With<Shaymin>, ())>,
+    mut npcs: Query<(
+        &mut Sprite3d,
+        &MeshMaterial3d<StandardMaterial>,
+        AnyOf<(&NPCAnimation, &MarkerUgh)>,
+    )>,
+    client: ClientQuery<Option<&NPCAnimation>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
-    for (mut sprite, options) in &mut npcs {
-        match options {
-            (Some(anim), Some(_)) => {
-                sprite.texture_atlas = match anim.get_current_atlas() {
-                    Some((atlas, flip)) => Some(atlas),
-                    None => None,
+    for (mut sprite, material, options) in &mut npcs {
+        let (Some(atlas)) = (match options.0.or(*client) {
+            Some(anim) => anim.get_current_atlas(),
+            None => (None),
+        }) else {
+            continue;
+        };
+
+        sprite.texture_atlas = Some(atlas);
+
+        // custom flip code to try and flip atlased sprites in place instead of as the whole texture
+        let Some(anim) = options.0.or(*client) else {
+            continue;
+        };
+
+        let Some((index, flip)) = anim.get_atlas_index() else {
+            continue;
+        };
+
+        if flip != sprite.flip {
+            if let Some(material) = materials.get_mut(material) {
+                sprite.flip = flip;
+                // see StandardMaterial::flip for the base version of this
+                material.uv_transform = if flip.x {
+                    // StandardMaterial::FLIP_HORIZONTAL
+                    Affine2 {
+                        matrix2: Mat2::from_cols(Vec2::new(-1.0, 0.0), Vec2::Y),
+                        // translation: Vec2::X,
+                        translation: Vec2::X * (anim.frame().floor() + 1.)
+                            / anim.spritesheet.max_frames as f32,
+                    }
+                } else {
+                    Affine2::default()
+                } * if flip.y {
+                    // StandardMaterial::FLIP_VERTICAL
+                    Affine2 {
+                        matrix2: Mat2::from_cols(Vec2::X, Vec2::new(0.0, -1.0)),
+                        // translation: Vec2::Y,
+                        translation: Vec2::Y * (index as f32 + 1.)
+                            / anim.spritesheet.total_variants as f32,
+                    }
+                } else {
+                    Affine2::default()
                 };
             }
-            (Some(anim), None) => {
-                sprite.texture_atlas = match anim.get_current_atlas() {
-                    Some((atlas, flip)) => Some(atlas),
-                    None => None,
-                };
-            }
-            (None, Some(_)) => {
-                if let Some(anim) = *client {
-                    sprite.texture_atlas = match anim.get_current_atlas() {
-                        Some((atlas, flip)) => Some(atlas),
-                        None => None,
-                    };
-                };
-            }
-            _ => (),
         }
     }
 }

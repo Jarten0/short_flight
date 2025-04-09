@@ -1,8 +1,9 @@
 use bevy::prelude::*;
 use short_flight::animation::AnimType;
 
-use crate::moves::interfaces::SpawnMove;
+use crate::moves::interfaces::{MoveInterfaces, SpawnMove};
 use crate::moves::tackle::Tackle;
+use crate::moves::Move;
 use crate::player::Shaymin;
 
 use super::animation::NPCAnimation;
@@ -24,14 +25,20 @@ pub enum NPCActions {
 /// What the enemy will choose to do in any given frame
 #[derive(Debug, Default, Component, Reflect, Clone)]
 pub enum NPCDesicion {
+    /// Will not try to do anything extra, though may not be completely idle if in the middle of an animation.
     #[default]
     Idle,
     SetAnimation(AnimType),
+    /// Will attempt to move in the direction of target.
+    /// The target position is relative to the current transform.
     Move {
-        direction: Vec3,
+        target: Vec3,
     },
-    Attack {
+    /// Will use a move to try and attack the player.
+    /// The ambition is as simple as the move.
+    BasicAttack {
         direction: Option<Dir2>,
+        move_id: Move,
     },
 }
 
@@ -49,38 +56,35 @@ pub(crate) fn run_enemy_npc_ai(
             Entity,
             Option<(&NPCInfo, &NPCActions, &NPCAnimation)>,
             Option<&Shaymin>,
-            &Transform,
             &GlobalTransform,
         ),
         Or<(With<NPCInfo>, With<Shaymin>)>,
     >,
     mut query2: Query<&mut NPCDesicion>,
 ) {
-    for (entity, npc, player, transform, gtransform) in &query {
-        let Some((npc, npc_actions, npc_anim)) = npc else {
+    for (entity, npc, player, gtransform) in &query {
+        let Some((npc, npc_actions, anim)) = npc else {
             continue;
         };
 
         // blocking animations shouldnt let them do anything anyways, so skip now to save on the extra work
-        if npc_anim.animation_data().is_blocking() {
+        if anim.animation_data().is_blocking() {
             continue;
         }
         let result = match *npc_actions {
             NPCActions::Offensive { focus }
                 if !can_aggro(npc, {
                     let get = query.get(focus).unwrap();
-                    match (get.1, get.2) {
-                        (Some(npc), None) => npc.0,
-                        (None, Some(player)) => &NPCInfo::Team {},
-                        (Some(npc), Some(_)) => npc.0,
-                        (None, None) => todo!(),
-                    }
+                    get.1
+                        .map(|npc| npc.0)
+                        .or(get.2.map(|_| &NPCInfo::Team {}))
+                        .unwrap()
                 }) =>
             {
                 NPCDesicion::SetAnimation(AnimType::Idle)
             }
             NPCActions::Offensive { focus } => {
-                let (entity, _, _, other_transform, other_gtransform) = query.get(focus).unwrap();
+                let (_, _, _, other_gtransform) = query.get(focus).unwrap();
 
                 let distance = Vec3::from((
                     other_gtransform.translation().xz() - gtransform.translation().xz(),
@@ -94,19 +98,20 @@ pub(crate) fn run_enemy_npc_ai(
                 };
 
                 if distance.length_squared() <= attack_range.powi(2) {
-                    NPCDesicion::Attack {
+                    NPCDesicion::BasicAttack {
                         direction: Dir2::new(distance.normalize_or_zero().xy()).ok(),
+                        move_id: todo!(),
                     }
                 } else {
                     NPCDesicion::Move {
-                        direction: distance.normalize_or_zero().xzy(),
+                        target: distance.normalize_or_zero().xzy(),
                     }
                 }
             }
             NPCActions::Defensive => {
                 let mut distance = Vec3::ZERO;
 
-                for (_, other_npc, player, _, other_gtransform) in &query {
+                for (_, other_npc, player, other_gtransform) in &query {
                     let other = match (other_npc, player) {
                         (Some(npc), None) => npc.0,
                         (None, Some(player)) => &NPCInfo::Team {},
@@ -120,13 +125,11 @@ pub(crate) fn run_enemy_npc_ai(
 
                 distance = distance.normalize_or_zero();
 
-                NPCDesicion::Move {
-                    direction: distance,
-                }
+                NPCDesicion::Move { target: distance }
             }
             NPCActions::Idle { explore } => {
                 if explore != Vec3::ZERO {
-                    NPCDesicion::Move { direction: explore }
+                    NPCDesicion::Move { target: explore }
                 } else {
                     NPCDesicion::Idle
                 }
@@ -154,22 +157,24 @@ pub(crate) fn commit_npc_actions(
     time: Res<Time>,
 ) {
     for (entity, info, desicion, mut anim, mut transform) in &mut query {
-        match desicion {
+        match desicion.clone() {
             NPCDesicion::Idle => (),
-            NPCDesicion::Move { direction } => {
+            NPCDesicion::Move { target: direction } => {
                 transform.translation += direction * time.delta_secs();
             }
-            NPCDesicion::Attack { direction } => {
+            NPCDesicion::BasicAttack { direction, move_id } => {
                 if !anim.animation_data().is_blocking() {
-                    anim.start_animation(AnimType::AttackTackle, *direction);
+                    if let Some(direction) = direction {
+                        anim.update_direction(direction);
+                    }
                     commands.queue(SpawnMove {
-                        move_: Tackle,
+                        move_id,
                         parent: entity,
                     })
                 }
             }
             NPCDesicion::SetAnimation(anim_type) => {
-                anim.start_animation(*anim_type, None);
+                anim.start_animation(anim_type, None);
             }
         }
     }
