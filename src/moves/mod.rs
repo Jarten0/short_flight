@@ -10,6 +10,7 @@ mod prelude {
 
 mod magical_leaf;
 pub mod tackle;
+pub mod void;
 
 /// Marks this entity as a move, aka an attack, that temporarily exists in the world.
 #[derive(
@@ -36,29 +37,19 @@ pub enum Move {
 
 fn register_component(input: Move) -> Box<dyn MoveComponent> {
     match input {
-        Move::Void => panic!(),
+        Move::Void => Box::new(void::VoidedMove),
         Move::Tackle => Box::new(tackle::Tackle),
         Move::MagicalLeaf => Box::new(magical_leaf::MagicalLeaf),
         // _ => void,
     }
 }
 
-// fn register_component(input: Move) -> for<'a> fn(&'a mut bevy::prelude::App) {
-//     match input {
-//         Move::Void => void,
-//         Move::Tackle => tackle::Tackle::build,
-//         Move::MagicalLeaf => magical_leaf::MagicalLeaf::build,
-//         // _ => void,
-//     }
-// }
-
-fn void(_: &mut App) {}
-
 pub mod interfaces {
     use super::prelude::*;
     use super::register_component;
     use super::Move;
     use crate::assets::AnimationSpritesheet;
+    use crate::npc::animation::NPCAnimation;
     use bevy::utils::hashbrown::HashMap;
     use bevy_asset_loader::asset_collection::AssetCollection;
     use bevy_asset_loader::mapped::MapKey;
@@ -66,21 +57,44 @@ pub mod interfaces {
     use short_flight::animation::AnimType;
     use short_flight::collision::ColliderShape;
 
+    #[derive(
+        Debug, Component, Reflect, Clone, Deref, DerefMut, Default, Serialize, Deserialize,
+    )]
+    #[serde(transparent)]
+    pub struct Moves(pub Vec<Move>);
+
     /// This component operates with the move system
-    pub trait MoveComponent: Reflect {
+    pub trait MoveComponent: Send + Sync {
         /// Initialize any useful schedules here.
         ///
         /// Is called for every variant with an associated data file.
-        fn build(app: &mut App)
-        where
-            Self: Sized;
-
-        // /// Return the variant dedicated to this component type.
-        // fn variant(&self) -> super::Move;
+        fn build(&mut self, app: &mut App);
 
         /// Called whenever a move entity is spawned, right before this is inserted into the entity.
         fn on_spawn(&mut self, world: &mut World, entity: Entity, move_data: &MoveData) {
             // world.entity_mut(entity).insert(Self);
+            // <Self as MoveComponent>::set_animation(world, entity, AnimType::AttackTackle, None);
+        }
+
+        fn set_animation(
+            world: &mut World,
+            move_entity: Entity,
+            animation: AnimType,
+            direction: Option<Dir2>,
+        ) where
+            Self: Sized,
+        {
+            world
+                .get_mut::<NPCAnimation>(Self::parent(world, move_entity))
+                .unwrap()
+                .start_animation(animation, direction)
+        }
+
+        fn parent(world: &World, move_entity: Entity) -> Entity
+        where
+            Self: Sized,
+        {
+            world.get::<Parent>(move_entity).unwrap().get()
         }
     }
 
@@ -88,10 +102,16 @@ pub mod interfaces {
 
     impl Plugin for MovePlugin {
         fn build(&self, app: &mut App) {
-            enum_iterator::all::<Move>()
-                .into_iter()
-                .map(|input| register_component(input))
-                .for_each(|a| {});
+            let mut move_interfaces = MoveInterfaces(
+                enum_iterator::all::<Move>()
+                    .into_iter()
+                    .map(|input| (input, register_component(input)))
+                    .collect(),
+            );
+            move_interfaces.iter_mut().for_each(|(_, registration)| {
+                registration.build(app);
+            });
+            app.insert_resource(move_interfaces);
         }
     }
 

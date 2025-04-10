@@ -7,6 +7,7 @@ use enum_iterator::Sequence;
 use serde::{Deserialize, Serialize};
 
 use crate::assets::{RonAssetLoader, ShortFlightLoadingState};
+use crate::moves::Move;
 
 pub mod ai;
 pub mod animation;

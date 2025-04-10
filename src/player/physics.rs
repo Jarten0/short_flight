@@ -1,4 +1,6 @@
 use super::{Client, ClientQuery};
+use crate::moves::interfaces::SpawnMove;
+use crate::moves::Move;
 use crate::npc::animation::NPCAnimation;
 use crate::tile::{TileFlags, TileSlope};
 use bevy::color::palettes;
@@ -56,6 +58,7 @@ pub fn setup(shaymin: Client, mut commands: Commands) {
 }
 
 pub fn control_shaymin(
+    shaymin_entity: Client,
     shaymin: ClientQuery<
         (&Transform, &mut ShayminRigidbody, Option<&mut NPCAnimation>),
         Without<Camera3d>,
@@ -63,6 +66,7 @@ pub fn control_shaymin(
     camera: Option<Single<&mut Transform, With<Camera3d>>>,
     kb: Res<ButtonInput<KeyCode>>,
     time: Res<Time>,
+    mut commands: Commands,
 ) {
     let (transform, mut rigidbody, anim) = shaymin.into_inner();
 
@@ -73,30 +77,44 @@ pub fn control_shaymin(
     };
 
     if !anim.animation_data().is_blocking() {
-        let input = get_input(kb);
         let movement = time.delta_secs() * 30.;
-        rigidbody.velocity = rigidbody
-            .velocity
-            .xz()
-            .move_towards(input.xz() * 1.5, movement)
-            .xxy()
-            .with_y(rigidbody.velocity.y);
-        if input.length_squared() > 0.0 {
-            let input = Dir2::new(input.xz().normalize_or(Vec2::NEG_Y)).unwrap();
-
-            let new_cardinal = cardinal(input) != cardinal(anim.direction())
-                || anim.current() != AnimType::Walking;
-
-            if new_cardinal {
-                anim.start_animation(animation::AnimType::Walking, Some(input));
-                anim.loop_ = true;
-            } else if rigidbody.velocity == Vec3::ZERO {
-                anim.start_animation(animation::AnimType::Idle, Some(input));
-            } else {
-                anim.loop_ = true;
-            }
+        if kb.just_pressed(KeyCode::KeyK) {
+            anim.start_animation(animation::AnimType::AttackShoot, None);
+            commands.queue(SpawnMove {
+                move_id: Move::MagicalLeaf,
+                parent: *shaymin_entity,
+            });
+            rigidbody.velocity = rigidbody
+                .velocity
+                .xz()
+                .move_towards(Vec2::ZERO, movement)
+                .xxy()
+                .with_y(rigidbody.velocity.y);
         } else {
-            anim.loop_ = false;
+            let input = get_input(kb);
+            rigidbody.velocity = rigidbody
+                .velocity
+                .xz()
+                .move_towards(input.xz() * 1.5, movement)
+                .xxy()
+                .with_y(rigidbody.velocity.y);
+            if input.length_squared() > 0.0 {
+                let input = Dir2::new(input.xz().normalize_or(Vec2::NEG_Y)).unwrap();
+
+                let new_cardinal = cardinal(input) != cardinal(anim.direction())
+                    || anim.current() != AnimType::Walking;
+
+                if new_cardinal {
+                    anim.start_animation(animation::AnimType::Walking, Some(input));
+                    anim.loop_ = true;
+                } else if rigidbody.velocity == Vec3::ZERO {
+                    anim.start_animation(animation::AnimType::Idle, Some(input));
+                } else {
+                    anim.loop_ = true;
+                }
+            } else {
+                anim.loop_ = false;
+            }
         }
     }
 

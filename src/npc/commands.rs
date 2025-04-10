@@ -5,8 +5,8 @@ use super::animation::NPCAnimation;
 use super::{animation, file::NPCAlmanac, file::NPCData, NPCInfo, NPC};
 use bevy::ecs::system::SystemState;
 use bevy::prelude::*;
-use short_flight::sprite3d::{Sprite3d, Sprite3dBuilder, Sprite3dParams};
 use short_flight::collision::{BasicCollider, ColliderShape, CollisionLayers};
+use short_flight::sprite3d::{Sprite3d, Sprite3dBuilder, Sprite3dParams};
 
 /// Spawns an NPC with the given NPC asset data
 ///
@@ -72,6 +72,7 @@ impl Command for SpawnNPC {
             index: 0,
         };
         let npcinfo = data.info.clone();
+        let moves = data.moves.clone();
 
         // Construct a `SystemState` struct, passing in a tuple of `SystemParam`
         // as if you were writing an ordinary system.
@@ -101,6 +102,10 @@ impl Command for SpawnNPC {
                 CollisionLayers::NPC,
                 CollisionLayers::Wall | CollisionLayers::NPC | CollisionLayers::Projectile,
             ));
+        }
+
+        if let Some(moves) = moves {
+            entity.insert(moves);
         }
 
         match npcinfo {

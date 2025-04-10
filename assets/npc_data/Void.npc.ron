@@ -1,18 +1,16 @@
 NPCData(
     display_name: "Void",
-    info: Enemy(),
-    collider: Some(
-        Circle(
-            1.0,
-        )
-    ),
-    stats: Some((Health(
-        hp: 1,
-    ), Damage(1))),
-    moves: [],
+    info: None,
+    collider: None,
+    stats: None,
+    moves: None,
     spritesheet: AnimationSpritesheet(
-        animations: [],
-        sprite_size: UVec2(0, 0),
+        animations: [
+        ],
+        sprite_size: UVec2(
+            0,
+            0,
+        ),
         data: {
             Idle: {
                 variant: Idle,

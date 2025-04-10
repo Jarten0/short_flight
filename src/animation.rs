@@ -15,6 +15,7 @@ pub enum AnimType {
     Walking,
     AttackSwipe,
     AttackTackle,
+    AttackShoot,
     Hurt,
     Down,
     /// The NPC has lost all HP and is playing faint animation
@@ -34,6 +35,10 @@ impl AnimType {
                 _ => false,
             },
             AttackTackle => match other.unwrap_or_default() {
+                Hurt => true,
+                _ => false,
+            },
+            AttackShoot => match other.unwrap_or_default() {
                 Hurt => true,
                 _ => false,
             },
@@ -147,25 +152,23 @@ impl AnimationDirLabel {
 
     /// 0. index
     /// 1. flip
-    pub fn get_index_offset(self, cardinal_dir: Dir2) -> (usize, BVec2) {
-        assert_eq!(cardinal_dir.length_squared(), 1.0);
-        assert_eq!(
-            cardinal_dir.abs().max_element(),
-            1.0,
-            "The input direction {:?} is not in a cardinal direction",
-            cardinal_dir
-        );
+    pub fn get_index_offset(self, dir: Dir2) -> (usize, BVec2) {
+        let cardinal_dir = AnimationDirLabel::cardinal(dir);
+        let horizontal_dir =
+            Dir2::new(dir.with_y(0.).try_normalize().unwrap_or(Vec2::X)).unwrap_or(Dir2::EAST);
+        let vertical_dir =
+            Dir2::new(dir.with_x(0.).try_normalize().unwrap_or(Vec2::NEG_Y)).unwrap_or(Dir2::SOUTH);
 
         match self {
             AnimationDirLabel::None => (0, BVec2::FALSE),
-            AnimationDirLabel::Vertical => match cardinal_dir {
-                Dir2::SOUTH => (0, BVec2::FALSE),
-                Dir2::NORTH => (1, BVec2::FALSE),
+            AnimationDirLabel::Horizontal => match horizontal_dir {
+                Dir2::EAST => (0, BVec2::FALSE),
+                Dir2::WEST => (0, BVec2 { x: true, y: false }),
                 _ => panic!("Impossible(?) direction variant matched."),
             },
-            AnimationDirLabel::Horizontal => match cardinal_dir {
-                Dir2::EAST => (0, BVec2::FALSE),
-                Dir2::WEST => (1, BVec2::FALSE),
+            AnimationDirLabel::Vertical => match vertical_dir {
+                Dir2::SOUTH => (0, BVec2::FALSE),
+                Dir2::NORTH => (0, BVec2 { x: false, y: true }),
                 _ => panic!("Impossible(?) direction variant matched."),
             },
             AnimationDirLabel::FlipVariants => match cardinal_dir {
@@ -187,7 +190,7 @@ impl AnimationDirLabel {
                 Dir2::NORTH => (1, BVec2::FALSE),
                 Dir2::WEST => (2, BVec2::FALSE),
                 Dir2::SOUTH => (3, BVec2::FALSE),
-                _ => panic!("Impossible(?) direction variant matched."),
+                _ => panic!("Impossible(?) direction*alt variant matched."),
             },
         }
     }
@@ -195,6 +198,8 @@ impl AnimationDirLabel {
     pub fn cardinal(input: Dir2) -> Dir2 {
         Dir2::new(if input.x.abs() >= input.y.abs() {
             input.with_y(0.0).normalize()
+        } else if input.y.abs() >= input.x.abs() {
+            input.with_x(0.0).normalize()
         } else {
             input.with_x(0.0).normalize()
         })

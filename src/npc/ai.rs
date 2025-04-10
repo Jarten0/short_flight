@@ -1,7 +1,7 @@
 use bevy::prelude::*;
 use short_flight::animation::AnimType;
 
-use crate::moves::interfaces::{MoveInterfaces, SpawnMove};
+use crate::moves::interfaces::{MoveData, MoveInterfaces, MoveList, Moves, SpawnMove};
 use crate::moves::tackle::Tackle;
 use crate::moves::Move;
 use crate::player::Shaymin;
@@ -60,8 +60,14 @@ pub(crate) fn run_enemy_npc_ai(
         ),
         Or<(With<NPCInfo>, With<Shaymin>)>,
     >,
+    moves: Query<&Moves>,
+    move_list: Option<Res<MoveList>>,
+    move_data: Res<Assets<MoveData>>,
     mut query2: Query<&mut NPCDesicion>,
 ) {
+    let Some(move_list) = move_list else {
+        return;
+    };
     for (entity, npc, player, gtransform) in &query {
         let Some((npc, npc_actions, anim)) = npc else {
             continue;
@@ -91,16 +97,27 @@ pub(crate) fn run_enemy_npc_ai(
                     0.0,
                 ));
 
-                let attack_range = match npc {
-                    NPCInfo::Enemy {} => 2.,
-                    NPCInfo::Team {} => 2.,
-                    _ => 0. as f32,
-                };
+                if let Some((move_id, range)) =
+                    moves.get(entity).unwrap().iter().find_map(|move_id| {
+                        let move_data =
+                            move_data.get(move_list.data.get(move_id).unwrap()).unwrap();
 
-                if distance.length_squared() <= attack_range.powi(2) {
-                    NPCDesicion::BasicAttack {
-                        direction: Dir2::new(distance.normalize_or_zero().xy()).ok(),
-                        move_id: todo!(),
+                        move_data
+                            .extra_info
+                            .get("range")
+                            .and_then(|range| range.clone().into_rust::<f32>().ok())
+                            .map(|range| (*move_id, range))
+                    })
+                {
+                    if distance.length_squared() <= range.powi(2) {
+                        NPCDesicion::BasicAttack {
+                            direction: Dir2::new(distance.normalize_or_zero().xy()).ok(),
+                            move_id,
+                        }
+                    } else {
+                        NPCDesicion::Move {
+                            target: distance.normalize_or_zero().xzy(),
+                        }
                     }
                 } else {
                     NPCDesicion::Move {
@@ -164,9 +181,11 @@ pub(crate) fn commit_npc_actions(
             }
             NPCDesicion::BasicAttack { direction, move_id } => {
                 if !anim.animation_data().is_blocking() {
-                    if let Some(direction) = direction {
-                        anim.update_direction(direction);
-                    }
+                    // if let Some(direction) = direction {
+                    //     anim.update_direction(direction);
+                    // }
+                    // in case move does not override animation, provide blocking animation here
+                    anim.start_animation(AnimType::AttackTackle, direction);
                     commands.queue(SpawnMove {
                         move_id,
                         parent: entity,

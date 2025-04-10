@@ -17,6 +17,7 @@ pub(crate) struct NPCAnimation {
     /// how far the animation has progressed in seconds.
     /// the name "frame" is a bit archaic in the context, but its familiarity is why I named it as such.
     frame: f32,
+    speed: f32,
     /// the direction the npc is facing
     direction: Dir2,
     pub animations: HashMap<AnimType, AnimationData>,
@@ -33,6 +34,7 @@ impl NPCAnimation {
             spritesheet,
             frame: 0.0,
             loop_: false,
+            speed: 4.0,
         }
     }
 
@@ -55,7 +57,7 @@ impl NPCAnimation {
 
     pub fn get_current_atlas(&self) -> Option<TextureAtlas> {
         let Some(handle) = self.spritesheet.atlas.as_ref() else {
-            return (None);
+            return None;
         };
         let layout = handle.clone_weak();
 
@@ -65,7 +67,7 @@ impl NPCAnimation {
 
         let index = self.frame.floor() as usize + (index * self.spritesheet.max_frames as usize);
 
-        (Some(TextureAtlas { layout, index }))
+        Some(TextureAtlas { layout, index })
     }
 
     fn get_atlas_index(&self) -> Option<(usize, BVec2)> {
@@ -85,13 +87,20 @@ impl NPCAnimation {
         let (offset, flip) = self
             .animation_data()
             .direction_label
-            .get_index_offset(AnimationDirLabel::cardinal(self.direction));
+            .get_index_offset(self.direction);
         index += offset;
         Some((index, flip))
     }
 
     pub fn frame(&self) -> f32 {
+        self.frame * self.speed
+    }
+
+    pub fn time(&self) -> f32 {
         self.frame
+    }
+    pub fn speed(&self) -> f32 {
+        self.speed
     }
 
     pub fn current(&self) -> AnimType {
@@ -163,9 +172,9 @@ pub(super) fn update_npc_sprites(
     mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
     for (mut sprite, material, options) in &mut npcs {
-        let (Some(atlas)) = (match options.0.or(*client) {
+        let Some(atlas) = (match options.0.or(*client) {
             Some(anim) => anim.get_current_atlas(),
-            None => (None),
+            None => None,
         }) else {
             continue;
         };
@@ -181,32 +190,32 @@ pub(super) fn update_npc_sprites(
             continue;
         };
 
-        if flip != sprite.flip {
-            if let Some(material) = materials.get_mut(material) {
-                sprite.flip = flip;
-                // see StandardMaterial::flip for the base version of this
-                material.uv_transform = if flip.x {
-                    // StandardMaterial::FLIP_HORIZONTAL
-                    Affine2 {
-                        matrix2: Mat2::from_cols(Vec2::new(-1.0, 0.0), Vec2::Y),
-                        // translation: Vec2::X,
-                        translation: Vec2::X * (anim.frame().floor() + 1.)
-                            / anim.spritesheet.max_frames as f32,
-                    }
-                } else {
-                    Affine2::default()
-                } * if flip.y {
-                    // StandardMaterial::FLIP_VERTICAL
-                    Affine2 {
-                        matrix2: Mat2::from_cols(Vec2::X, Vec2::new(0.0, -1.0)),
-                        // translation: Vec2::Y,
-                        translation: Vec2::Y * (index as f32 + 1.)
-                            / anim.spritesheet.total_variants as f32,
-                    }
-                } else {
-                    Affine2::default()
-                };
-            }
+        // if flip != sprite.flip {
+        if let Some(material) = materials.get_mut(material) {
+            sprite.flip = flip;
+            // see StandardMaterial::flip for the base version of this
+            material.uv_transform = if flip.x {
+                // StandardMaterial::FLIP_HORIZONTAL
+                Affine2 {
+                    matrix2: Mat2::from_cols(Vec2::NEG_X, Vec2::Y),
+                    // translation: Vec2::X,
+                    translation: Vec2::X
+                        * ((anim.time().floor() + 1.) / anim.spritesheet.max_frames as f32),
+                }
+            } else {
+                Affine2::IDENTITY
+            } * if flip.y {
+                // StandardMaterial::FLIP_VERTICAL
+                Affine2 {
+                    matrix2: Mat2::from_cols(Vec2::X, Vec2::new(0.0, -1.0)),
+                    // translation: Vec2::Y,
+                    translation: Vec2::Y * (index as f32 + 1.)
+                        / anim.spritesheet.total_variants as f32,
+                }
+            } else {
+                Affine2::IDENTITY
+            };
         }
+        // }
     }
 }

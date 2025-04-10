@@ -8,9 +8,9 @@ NPCData(
         Health(hp: 20),
         Damage(5),
     )),
-    moves: [
+    moves: Some([
         Tackle
-    ],
+    ]),
     spritesheet: AnimationSpritesheet(
         animations: [
             Idle,

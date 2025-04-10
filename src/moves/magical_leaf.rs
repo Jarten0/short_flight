@@ -1,3 +1,5 @@
+use short_flight::animation::AnimType;
+
 use crate::npc::animation::NPCAnimation;
 
 use super::prelude::*;
@@ -5,7 +7,7 @@ use super::prelude::*;
 pub(super) struct MagicalLeaf;
 
 impl MoveComponent for MagicalLeaf {
-    fn build(app: &mut App) {
+    fn build(&mut self, app: &mut App) {
         app.add_systems(FixedUpdate, process);
     }
 
@@ -23,6 +25,7 @@ impl MoveComponent for MagicalLeaf {
         move_data: &super::interfaces::MoveData,
     ) {
         world.entity_mut(entity).insert(Self);
+        Self::set_animation(world, entity, AnimType::AttackShoot, None);
     }
 }
 

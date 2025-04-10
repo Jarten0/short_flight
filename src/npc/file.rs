@@ -3,6 +3,7 @@ use super::stats::Health;
 use super::NPCInfo;
 use super::NPC;
 use crate::assets::AnimationSpritesheet;
+use crate::moves::interfaces::Moves;
 use crate::moves::Move;
 use bevy::prelude::*;
 use bevy::utils::HashMap;
@@ -24,10 +25,13 @@ pub(crate) struct NPCAlmanac {
 pub(crate) struct NPCData {
     pub(crate) display_name: String,
     pub(crate) info: NPCInfo,
-    pub(crate) collider: Option<ColliderShape>,
-    pub(crate) stats: Option<(Health, Damage)>,
     pub(crate) spritesheet: AnimationSpritesheet,
-    pub(crate) moves: Vec<Move>,
+    #[serde(default)]
+    pub(crate) collider: Option<ColliderShape>,
+    #[serde(default)]
+    pub(crate) stats: Option<(Health, Damage)>,
+    #[serde(default)]
+    pub(crate) moves: Option<Moves>,
 }
 
 pub(crate) fn validate_npc_data(
@@ -35,8 +39,6 @@ pub(crate) fn validate_npc_data(
     asset_server: Res<AssetServer>,
 ) {
     for (id, data) in npc_datas.iter_mut() {
-        assert!(data.stats.is_some());
-        assert!(data.collider.is_some());
         data.spritesheet.atlas = Some(asset_server.add(data.spritesheet.get_atlas_layout()));
         assert!(data.spritesheet.atlas.is_some());
     }
