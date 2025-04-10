@@ -5,7 +5,7 @@ use crate::npc::animation::NPCAnimation;
 use crate::tile::{TileFlags, TileSlope};
 use bevy::color::palettes;
 use bevy::prelude::*;
-use short_flight::animation::{self, AnimType};
+use short_flight::animation::{self, cardinal, AnimType};
 use short_flight::collision::{
     BasicCollider, ColliderShape, CollisionEnterEvent, CollisionExitEvent, CollisionLayers,
     DynamicCollision, StaticCollision, ZHitbox,
@@ -87,11 +87,11 @@ pub fn control_shaymin(
             rigidbody.velocity = rigidbody
                 .velocity
                 .xz()
-                .move_towards(Vec2::ZERO, movement)
+                .move_towards(Vec2::ZERO, movement * 2.)
                 .xxy()
                 .with_y(rigidbody.velocity.y);
         } else {
-            let input = get_input(kb);
+            let input = get_input(kb).normalize_or_zero();
             rigidbody.velocity = rigidbody
                 .velocity
                 .xz()
@@ -113,20 +113,13 @@ pub fn control_shaymin(
                     anim.loop_ = true;
                 }
             } else {
+                anim.start_animation(AnimType::Idle, None);
                 anim.loop_ = false;
             }
         }
     }
 
     cam_transform.translation = transform.translation.with_y(transform.translation.y + 10.);
-}
-
-fn cardinal(input: Dir2) -> Vec2 {
-    if input.x.abs() > input.y.abs() {
-        input.abs().with_y(0.0).normalize()
-    } else {
-        input.abs().with_x(0.0).normalize()
-    }
 }
 
 pub fn get_input(kb: Res<ButtonInput<KeyCode>>) -> Vec3 {
@@ -251,6 +244,7 @@ pub fn move_out_from_tilemaps(
     mut rigidbody: Query<(&DynamicCollision, &GlobalTransform, &mut Transform)>,
     other_col: Query<(&BasicCollider, &GlobalTransform)>,
     tile_data_query: Query<(&TileSlope, &TileFlags)>,
+    mut gizmos: Gizmos,
 ) {
     let Ok((rigidbody, gtransform, mut transform)) = rigidbody.get_mut(trigger.this) else {
         return;
@@ -273,4 +267,5 @@ pub fn move_out_from_tilemaps(
     let max = tile_slope.get_height_at_point(tile_flags, point);
 
     transform.translation.y = max + gtransform2.translation().y;
+    gizmos.cross(transform.translation, 2., palettes::basic::NAVY);
 }

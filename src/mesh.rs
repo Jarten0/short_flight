@@ -457,7 +457,7 @@ fn adjust_on_release(
     }
     picking.set(TilePickedMode::Idle);
     let (mut depth, transform) = transforms.get_mut(drag.entity()).unwrap();
-    *depth = TileDepth::from(depth.f32() + transform.translation.y.round());
+    *depth = TileDepth::from(transform.translation.y.round());
     tile_change_writer.send(TileChanged { tile: drag.target });
 }
 
@@ -473,7 +473,7 @@ fn adjust_on_up(
     }
     picking.set(TilePickedMode::Idle);
     let (mut depth, transform) = transforms.get_mut(drag.entity()).unwrap();
-    *depth = TileDepth::from(depth.f32() + transform.translation.y.round());
+    *depth = TileDepth::from(transform.translation.y.round());
     tile_change_writer.send(TileChanged { tile: drag.target });
 }
 

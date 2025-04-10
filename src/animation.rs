@@ -153,7 +153,7 @@ impl AnimationDirLabel {
     /// 0. index
     /// 1. flip
     pub fn get_index_offset(self, dir: Dir2) -> (usize, BVec2) {
-        let cardinal_dir = AnimationDirLabel::cardinal(dir);
+        let cardinal_dir = cardinal(dir);
         let horizontal_dir =
             Dir2::new(dir.with_y(0.).try_normalize().unwrap_or(Vec2::X)).unwrap_or(Dir2::EAST);
         let vertical_dir =
@@ -194,15 +194,15 @@ impl AnimationDirLabel {
             },
         }
     }
+}
 
-    pub fn cardinal(input: Dir2) -> Dir2 {
-        Dir2::new(if input.x.abs() >= input.y.abs() {
-            input.with_y(0.0).normalize()
-        } else if input.y.abs() >= input.x.abs() {
-            input.with_x(0.0).normalize()
-        } else {
-            input.with_x(0.0).normalize()
-        })
-        .expect("bath mamphs ;(")
-    }
+pub fn cardinal(input: Dir2) -> Dir2 {
+    Dir2::new(if input.x.abs() >= input.y.abs() {
+        input.with_y(0.0).normalize()
+    } else if input.y.abs() >= input.x.abs() {
+        input.with_x(0.0).normalize()
+    } else {
+        input.with_x(0.0).normalize()
+    })
+    .expect("bath mamphs ;(")
 }
