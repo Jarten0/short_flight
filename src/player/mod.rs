@@ -1,6 +1,6 @@
 use crate::assets::AnimationAssets;
 use crate::assets::ShortFlightLoadingState;
-use crate::npc::animation::NPCAnimation;
+use crate::npc::animation::AnimationHandler;
 use assets::ShayminAssets;
 use bevy::prelude::*;
 use short_flight::animation::{AnimType, AnimationDirLabel};
@@ -67,7 +67,7 @@ fn insert_animation(
 
 fn insert_sprite(
     mut sprite_3d_params: Sprite3dParams,
-    client: ClientQuery<(Entity, &NPCAnimation)>,
+    client: ClientQuery<(Entity, &AnimationHandler)>,
     mut commands: Commands,
     assets: Res<ShayminAssets>,
 ) {
@@ -83,12 +83,12 @@ fn insert_sprite(
         sprite,
         Transform::from_xyz(0.0, 1.0, 0.0)
             .with_rotation(Quat::from_rotation_x(f32::to_radians(-90.0))),
-        MarkerUgh,
+        ClientChild,
     ));
 }
 
 #[derive(Debug, Component)]
-pub struct MarkerUgh;
+pub struct ClientChild;
 
 /// Runs if any of the assets cannot be loaded
 fn retry(mut commands: Commands, asset_server: Res<AssetServer>) {

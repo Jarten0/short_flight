@@ -35,11 +35,22 @@ pub(crate) struct NPCData {
 }
 
 pub(crate) fn validate_npc_data(
+    mut asset_events: EventReader<AssetEvent<NPCData>>,
     mut npc_datas: ResMut<Assets<NPCData>>,
     asset_server: Res<AssetServer>,
 ) {
+    for event in asset_events.read() {
+        match event {
+            AssetEvent::Added { id } => {
+                let data = npc_datas.get_mut(*id).unwrap();
+                data.spritesheet.atlas =
+                    Some(asset_server.add(data.spritesheet.get_atlas_layout()));
+            }
+            _ => (),
+        }
+    }
+
     for (id, data) in npc_datas.iter_mut() {
-        data.spritesheet.atlas = Some(asset_server.add(data.spritesheet.get_atlas_layout()));
         assert!(data.spritesheet.atlas.is_some());
     }
 }

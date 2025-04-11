@@ -1,12 +1,12 @@
 use super::assets::ShayminAssets;
 use crate::assets::AnimationSpritesheet;
-use crate::npc::animation::NPCAnimation;
+use crate::npc::animation::AnimationHandler;
 use bevy::prelude::*;
 use short_flight::animation::{AnimType, AnimationDirLabel};
 use short_flight::sprite3d::Sprite3dBuilder;
 
 pub fn animation(asset_server: &AssetServer, assets: &ShayminAssets) -> impl Bundle {
-    NPCAnimation::new(AnimationSpritesheet::new(
+    AnimationHandler::new(AnimationSpritesheet::new(
         vec![
             (AnimType::Idle.create_data(1, AnimationDirLabel::FullyDirectional)),
             (AnimType::Walking.create_data(2, AnimationDirLabel::FullyDirectional)),

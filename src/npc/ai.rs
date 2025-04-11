@@ -6,7 +6,7 @@ use crate::moves::tackle::Tackle;
 use crate::moves::Move;
 use crate::player::Shaymin;
 
-use super::animation::NPCAnimation;
+use super::animation::AnimationHandler;
 use super::NPCInfo;
 
 /// Describes the various states an NPC can be in,
@@ -54,7 +54,7 @@ pub(crate) fn run_enemy_npc_ai(
     query: Query<
         (
             Entity,
-            Option<(&NPCInfo, &NPCActions, &NPCAnimation)>,
+            Option<(&NPCInfo, &NPCActions, &AnimationHandler)>,
             Option<&Shaymin>,
             &GlobalTransform,
         ),
@@ -168,7 +168,7 @@ pub(crate) fn commit_npc_actions(
         Entity,
         &NPCInfo,
         &NPCDesicion,
-        &mut NPCAnimation,
+        &mut AnimationHandler,
         &mut Transform,
     )>,
     time: Res<Time>,

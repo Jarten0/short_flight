@@ -8,7 +8,7 @@ mod prelude {
     pub use bevy::prelude::*;
 }
 
-mod magical_leaf;
+pub mod magical_leaf;
 pub mod tackle;
 pub mod void;
 
@@ -49,7 +49,7 @@ pub mod interfaces {
     use super::register_component;
     use super::Move;
     use crate::assets::AnimationSpritesheet;
-    use crate::npc::animation::NPCAnimation;
+    use crate::npc::animation::AnimationHandler;
     use bevy::utils::hashbrown::HashMap;
     use bevy_asset_loader::asset_collection::AssetCollection;
     use bevy_asset_loader::mapped::MapKey;
@@ -85,7 +85,7 @@ pub mod interfaces {
             Self: Sized,
         {
             world
-                .get_mut::<NPCAnimation>(Self::parent(world, move_entity))
+                .get_mut::<AnimationHandler>(Self::parent(world, move_entity))
                 .unwrap()
                 .start_animation(animation, direction)
         }
@@ -150,12 +150,12 @@ pub mod interfaces {
     }
 
     pub struct SpawnMove {
-        pub(crate) move_id: Move,
-        pub(crate) parent: Entity,
+        pub move_id: Move,
+        pub parent: Entity,
     }
 
     impl Command for SpawnMove {
-        fn apply(mut self, world: &mut World) {
+        fn apply(self, world: &mut World) {
             let move_list = world.resource::<MoveList>();
             let Some(handle) = move_list.data.get(&self.move_id) else {
                 log::error!("Could not find move data file for {:?}", self.move_id);

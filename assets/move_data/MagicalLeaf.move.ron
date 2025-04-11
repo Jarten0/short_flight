@@ -1,6 +1,17 @@
 {
     display_name: "Tackle",
-    spritesheet: None,
+    spritesheet: Some(
+        animations: [
+            Idle
+        ],
+        sprite_size: UVec2(x: 32, y: 32),
+        data: {
+            Idle: {
+                variant: Idle,
+                frames: 4
+            }
+        }
+    ),
     collider: Some(Circle(0.8)),
     range: 7.0 
 }

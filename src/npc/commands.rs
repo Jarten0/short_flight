@@ -1,7 +1,7 @@
 use crate::npc::ai::{NPCActions, NPCDesicion};
 use crate::player::Shaymin;
 
-use super::animation::NPCAnimation;
+use super::animation::AnimationHandler;
 use super::{animation, file::NPCAlmanac, file::NPCData, NPCInfo, NPC};
 use bevy::ecs::system::SystemState;
 use bevy::prelude::*;
@@ -58,7 +58,7 @@ impl Command for SpawnNPC {
         );
         let stats = (
             data.stats.clone().unwrap(),
-            NPCAnimation::new(data.spritesheet.clone()),
+            AnimationHandler::new(data.spritesheet.clone()),
             NPCActions::Offensive {
                 focus: world
                     .query_filtered::<Entity, With<Shaymin>>()

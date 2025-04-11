@@ -1,7 +1,7 @@
 use super::{Client, ClientQuery};
 use crate::moves::interfaces::SpawnMove;
 use crate::moves::Move;
-use crate::npc::animation::NPCAnimation;
+use crate::npc::animation::AnimationHandler;
 use crate::tile::{TileFlags, TileSlope};
 use bevy::color::palettes;
 use bevy::prelude::*;
@@ -60,7 +60,11 @@ pub fn setup(shaymin: Client, mut commands: Commands) {
 pub fn control_shaymin(
     shaymin_entity: Client,
     shaymin: ClientQuery<
-        (&Transform, &mut ShayminRigidbody, Option<&mut NPCAnimation>),
+        (
+            &Transform,
+            &mut ShayminRigidbody,
+            Option<&mut AnimationHandler>,
+        ),
         Without<Camera3d>,
     >,
     camera: Option<Single<&mut Transform, With<Camera3d>>>,
@@ -106,15 +110,15 @@ pub fn control_shaymin(
 
                 if new_cardinal {
                     anim.start_animation(animation::AnimType::Walking, Some(input));
-                    anim.loop_ = true;
+                    anim.looping = true;
                 } else if rigidbody.velocity == Vec3::ZERO {
                     anim.start_animation(animation::AnimType::Idle, Some(input));
                 } else {
-                    anim.loop_ = true;
+                    anim.looping = true;
                 }
             } else {
                 anim.start_animation(AnimType::Idle, None);
-                anim.loop_ = false;
+                anim.looping = false;
             }
         }
     }

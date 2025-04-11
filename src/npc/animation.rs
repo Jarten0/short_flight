@@ -1,7 +1,7 @@
 use super::NPC;
 use crate::assets::AnimationSpritesheet;
 use crate::moves::interfaces::MoveInfo;
-use crate::player::{ClientQuery, MarkerUgh, Shaymin};
+use crate::player::{ClientQuery, ClientChild, Shaymin};
 use bevy::math::Affine2;
 use bevy::prelude::*;
 use bevy::utils::HashMap;
@@ -11,29 +11,29 @@ use short_flight::sprite3d::Sprite3d;
 
 /// Handles the state managment of the NPC
 #[derive(Debug, Component)]
-#[require(NPC)]
-pub(crate) struct NPCAnimation {
+pub(crate) struct AnimationHandler {
     current: AnimType,
     /// how far the animation has progressed in seconds.
     /// the name "frame" is a bit archaic in the context, but its familiarity is why I named it as such.
     frame: f32,
+    /// time modifier to alter how quickly frame increases
     speed: f32,
-    /// the direction the npc is facing
+    /// the direction the entity is facing
     direction: Dir2,
     pub animations: HashMap<AnimType, AnimationData>,
     pub spritesheet: AnimationSpritesheet,
-    pub loop_: bool,
+    pub looping: bool,
 }
 
-impl NPCAnimation {
-    pub fn new(spritesheet: AnimationSpritesheet) -> NPCAnimation {
+impl AnimationHandler {
+    pub fn new(spritesheet: AnimationSpritesheet) -> AnimationHandler {
         Self {
             current: AnimType::Idle,
             direction: Dir2::NEG_Y,
             animations: spritesheet.data.0.clone(),
             spritesheet,
             frame: 0.0,
-            loop_: false,
+            looping: false,
             speed: 4.0,
         }
     }
@@ -46,7 +46,7 @@ impl NPCAnimation {
         };
 
         if animation_data.process_timer(&mut self.frame, delta ) {
-            if !self.loop_ {
+            if !self.looping {
                 self.start_animation(AnimType::Idle, None);
             }
             true
@@ -137,7 +137,7 @@ impl NPCAnimation {
 
     /// Should only be called if [`AnimationData::is_blocking`] is false
     pub fn start_animation(&mut self, animation: AnimType, direction: Option<Dir2>) {
-        self.loop_ = false;
+        self.looping = false;
         self.frame = 0.0;
         self.current = animation;
         if let Some(direction) = direction {
@@ -148,7 +148,7 @@ impl NPCAnimation {
 
 pub(super) fn update_sprite_timer(
     mut commands: Commands,
-    mut npcs: Query<(&mut NPCAnimation, &Children)>,
+    mut npcs: Query<(&mut AnimationHandler, &Children)>,
     move_query: Query<&MoveInfo>,
     delta: Res<Time>,
 ) {
@@ -167,9 +167,9 @@ pub(super) fn update_npc_sprites(
     mut npcs: Query<(
         &mut Sprite3d,
         &MeshMaterial3d<StandardMaterial>,
-        AnyOf<(&NPCAnimation, &MarkerUgh)>,
+        AnyOf<(&AnimationHandler, &ClientChild)>,
     )>,
-    client: ClientQuery<Option<&NPCAnimation>>,
+    client: ClientQuery<Option<&AnimationHandler>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
     for (mut sprite, material, options) in &mut npcs {

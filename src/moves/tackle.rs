@@ -3,7 +3,7 @@ use short_flight::collision::{BasicCollider, CollisionLayers, DynamicCollision, 
 
 use super::interfaces::MoveData;
 use super::prelude::*;
-use crate::npc::animation::NPCAnimation;
+use crate::npc::animation::AnimationHandler;
 
 #[derive(Component, Reflect)]
 pub(crate) struct Tackle;
@@ -29,7 +29,7 @@ impl MoveComponent for Tackle {
             Self,
         ));
         let mut anim = world
-            .get_mut::<NPCAnimation>(Self::parent(&world, entity))
+            .get_mut::<AnimationHandler>(Self::parent(&world, entity))
             .unwrap();
         anim.start_animation(AnimType::AttackTackle, None);
     }
@@ -37,7 +37,7 @@ impl MoveComponent for Tackle {
 
 fn tackle(
     active_moves: Query<(&Tackle, &Parent)>,
-    mut parent: Query<(&mut Transform, &NPCAnimation)>,
+    mut parent: Query<(&mut Transform, &AnimationHandler)>,
     time: Res<Time>,
 ) {
     for (tackle, entity) in active_moves.iter() {
