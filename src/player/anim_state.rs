@@ -1,9 +1,9 @@
 use super::assets::ShayminAssets;
+use crate::animation::{AnimType, AnimationDirLabel};
 use crate::assets::AnimationSpritesheet;
 use crate::npc::animation::AnimationHandler;
+use crate::sprite3d::Sprite3dBuilder;
 use bevy::prelude::*;
-use short_flight::animation::{AnimType, AnimationDirLabel};
-use short_flight::sprite3d::Sprite3dBuilder;
 
 pub fn animation(asset_server: &AssetServer, assets: &ShayminAssets) -> impl Bundle {
     AnimationHandler::new(AnimationSpritesheet::new(

@@ -9,7 +9,7 @@ impl super::ProjectileInterface for VoidedProjectile {
         &mut self,
         world: &mut World,
         projectile_entity: Entity,
-        source: Entity,
+        source: Option<Entity>,
         projectile_data: &super::interfaces::ProjectileData,
     ) {
     }

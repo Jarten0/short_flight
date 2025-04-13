@@ -1,0 +1,15 @@
+(
+    display_name: "Leaf",
+    spritesheet: AnimationSpritesheet(
+        animations: [Idle],
+        sprite_size: UVec2(32, 32),
+        data: {
+            Idle: {
+                variant: Idle,
+                frames: 4,
+                direction: None
+            }
+        }
+    ),
+    collider: Circle(0.8)
+)

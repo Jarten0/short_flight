@@ -1,6 +1,7 @@
-use short_flight::animation::AnimType;
+use crate::animation::AnimType;
 
 use crate::npc::animation::AnimationHandler;
+use crate::npc::stats::{Damage, FacingDirection};
 use crate::projectile::interfaces::SpawnProjectile;
 use crate::projectile::Projectile;
 
@@ -10,7 +11,7 @@ pub struct MagicalLeaf;
 
 impl MoveComponent for MagicalLeaf {
     fn build(&mut self, app: &mut App) {
-        app.add_systems(FixedUpdate, process);
+        // app.add_systems(FixedUpdate, process);
     }
 
     // fn variant(&self) -> super::Move
@@ -23,25 +24,30 @@ impl MoveComponent for MagicalLeaf {
     fn on_spawn(
         &mut self,
         world: &mut World,
-        entity: Entity,
+        move_entity: Entity,
         move_data: &super::interfaces::MoveData,
     ) {
-        world.entity_mut(entity).insert(Self);
-        Self::set_animation(world, entity, AnimType::AttackShoot, None);
+        let parent = world.get::<Parent>(move_entity).unwrap().get();
+        let position = world.get::<GlobalTransform>(parent).unwrap().translation();
+        let direction = **world.get::<FacingDirection>(parent).unwrap();
+        world.entity_mut(move_entity).insert((Self, Damage(20)));
+        Self::set_animation(world, move_entity, AnimType::AttackShoot);
         world.commands().queue(SpawnProjectile {
-            source: entity,
+            source: Some(move_entity),
             projectile_id: Projectile::LeafAttack,
+            position,
+            direction,
         });
     }
 }
 
-fn process(
-    mut query: Query<(&MagicalLeaf, &mut Transform, &Parent)>,
-    parent: Query<&mut AnimationHandler>,
-) {
-    for (_, mut transform, parent_id) in &mut query {
-        let Ok(anim) = parent.get(parent_id.get()) else {
-            continue;
-        };
-    }
-}
+// fn process(
+//     mut query: Query<(&MagicalLeaf, &mut Transform, &Parent)>,
+//     parent: Query<&mut AnimationHandler>,
+// ) {
+//     for (_, mut transform, parent_id) in &mut query {
+//         let Ok(anim) = parent.get(parent_id.get()) else {
+//             continue;
+//         };
+//     }
+// }

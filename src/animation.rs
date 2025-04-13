@@ -3,6 +3,8 @@ use bevy::reflect::Reflect;
 use serde::{Deserialize, Serialize};
 pub use AnimType::*;
 
+use crate::npc::stats::FacingDirection;
+
 /// lightweight identifier for variants of animations
 /// a seperate struct is used to store all of the common animation data
 #[derive(
@@ -152,8 +154,8 @@ impl AnimationDirLabel {
 
     /// 0. index
     /// 1. flip
-    pub fn get_index_offset(self, dir: Dir2) -> (usize, BVec2) {
-        let cardinal_dir = cardinal(dir);
+    pub fn get_index_offset(self, dir: &FacingDirection) -> (usize, BVec2) {
+        let cardinal_dir = cardinal(**dir);
         let horizontal_dir =
             Dir2::new(dir.with_y(0.).try_normalize().unwrap_or(Vec2::X)).unwrap_or(Dir2::EAST);
         let vertical_dir =

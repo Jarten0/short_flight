@@ -2,6 +2,22 @@ use super::NPC;
 use bevy::prelude::*;
 use serde::{Deserialize, Serialize};
 
+/// the direction the entity is facing
+#[derive(Debug, Component, Reflect, Serialize, Deserialize, Clone, Deref)]
+pub struct FacingDirection(pub Dir2);
+
+impl FacingDirection {
+    pub fn set(&mut self, dir: Dir2) {
+        self.0 = dir;
+    }
+}
+
+impl Default for FacingDirection {
+    fn default() -> Self {
+        Self(Dir2::SOUTH)
+    }
+}
+
 /// When it reaches 0, the entity will be despawned.
 ///
 /// If death is not handled, then it automatically despawns.
@@ -28,6 +44,14 @@ impl Health {
     }
 }
 
+impl std::ops::Deref for Health {
+    type Target = u64;
+
+    fn deref(&self) -> &Self::Target {
+        &self.hp
+    }
+}
+
 /// Event is sent when an entity reaches 0 hp.
 ///
 /// Should be accounted for when writing enemy AI logic.
@@ -45,6 +69,6 @@ pub(crate) fn query_dead(mut commands: Commands, mut query: Query<(Entity, &mut 
 }
 
 /// Multiplies with the power of the attack to increase the damage dealt.
-#[derive(Debug, Component, Reflect, Serialize, Deserialize, Clone)]
+#[derive(Debug, Component, Reflect, Serialize, Deserialize, Clone, Default, Deref)]
 #[require(NPC)]
 pub struct Damage(pub u64);

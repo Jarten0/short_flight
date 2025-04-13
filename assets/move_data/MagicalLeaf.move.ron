@@ -1,17 +1,6 @@
 {
-    display_name: "Tackle",
-    spritesheet: Some(
-        animations: [
-            Idle
-        ],
-        sprite_size: UVec2(x: 32, y: 32),
-        data: {
-            Idle: {
-                variant: Idle,
-                frames: 4
-            }
-        }
-    ),
-    collider: Some(Circle(0.8)),
+    display_name: "MagicalLeaf",
+    spritesheet: None,
+    collider: None,
     range: 7.0 
 }

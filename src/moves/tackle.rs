@@ -1,5 +1,6 @@
-use short_flight::animation::AnimType;
-use short_flight::collision::{BasicCollider, CollisionLayers, DynamicCollision, ZHitbox};
+use crate::animation::AnimType;
+use crate::collision::{BasicCollider, CollisionLayers, DynamicCollision, ZHitbox};
+use crate::npc::stats::FacingDirection;
 
 use super::interfaces::MoveData;
 use super::prelude::*;
@@ -31,28 +32,24 @@ impl MoveComponent for Tackle {
         let mut anim = world
             .get_mut::<AnimationHandler>(Self::parent(&world, entity))
             .unwrap();
-        anim.start_animation(AnimType::AttackTackle, None);
+        anim.start_animation(AnimType::AttackTackle);
     }
 }
 
 fn tackle(
     active_moves: Query<(&Tackle, &Parent)>,
-    mut parent: Query<(&mut Transform, &AnimationHandler)>,
+    mut parent: Query<(&mut Transform, &AnimationHandler, &FacingDirection)>,
     time: Res<Time>,
 ) {
     for (tackle, entity) in active_moves.iter() {
-        let (mut transform, anim) = parent.get_mut(**entity).unwrap();
+        let (mut transform, anim, dir) = parent.get_mut(**entity).unwrap();
 
         match anim.frame() / anim.speed() {
             0.0..2.0 => {
-                transform.translation += (anim.direction() * time.delta_secs() * 4.0)
-                    .xxy()
-                    .with_y(0.0);
+                transform.translation += (**dir * time.delta_secs() * 4.0).xxy().with_y(0.0);
             }
             2.0..3.0 => {
-                transform.translation += (anim.direction() * time.delta_secs() * 0.5)
-                    .xxy()
-                    .with_y(0.0);
+                transform.translation += (**dir * time.delta_secs() * 0.5).xxy().with_y(0.0);
             }
             _ => (),
         }

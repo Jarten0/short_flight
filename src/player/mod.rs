@@ -1,10 +1,11 @@
+use crate::animation::{AnimType, AnimationDirLabel};
 use crate::assets::AnimationAssets;
 use crate::assets::ShortFlightLoadingState;
 use crate::npc::animation::AnimationHandler;
+use crate::npc::stats::{Damage, FacingDirection, Health};
+use crate::sprite3d::Sprite3dParams;
 use assets::ShayminAssets;
 use bevy::prelude::*;
-use short_flight::animation::{AnimType, AnimationDirLabel};
-use short_flight::sprite3d::Sprite3dParams;
 
 mod anim_state;
 pub mod assets;
@@ -45,9 +46,12 @@ pub type Client<'a> = Single<'a, Entity, With<Shaymin>>;
 pub type ClientQuery<'a, T, F = ()> = Single<'a, T, (With<Shaymin>, F)>;
 
 fn setup(shaymin: Client, mut commands: Commands) {
-    commands
-        .entity(*shaymin)
-        .insert((Transform::from_xyz(10.0, 0.0, -2.0)));
+    commands.entity(*shaymin).insert((
+        Transform::from_xyz(10.0, 0.0, -2.0),
+        FacingDirection(Dir2::EAST),
+        Damage(20),
+        Health::new(50),
+    ));
 }
 
 /// Runs after all of the assets are loaded

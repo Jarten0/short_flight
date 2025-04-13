@@ -1,15 +1,16 @@
 use super::{Client, ClientQuery};
+use crate::animation::{self, cardinal, AnimType};
+use crate::collision::{
+    self, BasicCollider, ColliderShape, CollisionEnterEvent, CollisionExitEvent, CollisionLayers,
+    DynamicCollision, StaticCollision, ZHitbox,
+};
 use crate::moves::interfaces::SpawnMove;
 use crate::moves::Move;
 use crate::npc::animation::AnimationHandler;
+use crate::npc::stats::FacingDirection;
 use crate::tile::{TileFlags, TileSlope};
 use bevy::color::palettes;
 use bevy::prelude::*;
-use short_flight::animation::{self, cardinal, AnimType};
-use short_flight::collision::{
-    BasicCollider, ColliderShape, CollisionEnterEvent, CollisionExitEvent, CollisionLayers,
-    DynamicCollision, StaticCollision, ZHitbox,
-};
 
 #[derive(Debug, Component)]
 #[require(DynamicCollision)]
@@ -38,7 +39,7 @@ pub fn setup(shaymin: Client, mut commands: Commands) {
     ));
     commands
         .entity(*shaymin)
-        .observe(move_out_from_tilemaps)
+        .observe(collision::physics::move_out_from_tilemaps)
         .observe(
             |trigger: Trigger<CollisionEnterEvent>, mut query: Query<&mut ShayminRigidbody>| {
                 let Ok(mut rigidbody) = query.get_mut(trigger.this) else {
@@ -64,6 +65,7 @@ pub fn control_shaymin(
             &Transform,
             &mut ShayminRigidbody,
             Option<&mut AnimationHandler>,
+            &mut FacingDirection,
         ),
         Without<Camera3d>,
     >,
@@ -71,8 +73,9 @@ pub fn control_shaymin(
     kb: Res<ButtonInput<KeyCode>>,
     time: Res<Time>,
     mut commands: Commands,
+    mut gizmos: Gizmos,
 ) {
-    let (transform, mut rigidbody, anim) = shaymin.into_inner();
+    let (transform, mut rigidbody, anim, mut facing) = shaymin.into_inner();
 
     let mut cam_transform = camera.unwrap().into_inner();
 
@@ -83,7 +86,7 @@ pub fn control_shaymin(
     if !anim.animation_data().is_blocking() {
         let movement = time.delta_secs() * 30.;
         if kb.just_pressed(KeyCode::KeyK) {
-            anim.start_animation(animation::AnimType::AttackShoot, None);
+            anim.start_animation(animation::AnimType::AttackShoot);
             commands.queue(SpawnMove {
                 move_id: Move::MagicalLeaf,
                 parent: *shaymin_entity,
@@ -105,23 +108,55 @@ pub fn control_shaymin(
             if input.length_squared() > 0.0 {
                 let input = Dir2::new(input.xz().normalize_or(Vec2::NEG_Y)).unwrap();
 
-                let new_cardinal = cardinal(input) != cardinal(anim.direction())
-                    || anim.current() != AnimType::Walking;
+                let mut rhs = *input;
+                if **facing == -input {
+                    rhs -= Vec2::NEG_ONE;
+                }
 
+                let target = facing
+                    .move_towards(
+                        rhs,
+                        time.delta_secs() * facing.distance_squared(*input) * 8.,
+                    )
+                    .normalize_or_zero();
+
+                gizmos.arrow(
+                    transform.translation,
+                    transform.translation + Vec3::from((*input, 1.0)).xzy(),
+                    palettes::basic::GREEN,
+                );
+                gizmos.arrow(
+                    transform.translation,
+                    transform.translation + Vec3::from((target, 1.0)).xzy(),
+                    palettes::basic::YELLOW,
+                );
+
+                let new_dir = Dir2::new(target).unwrap_or(*FacingDirection::default());
+
+                let new_cardinal =
+                    cardinal(input) != cardinal(**facing) || anim.current() != AnimType::Walking;
+
+                facing.set(new_dir);
                 if new_cardinal {
-                    anim.start_animation(animation::AnimType::Walking, Some(input));
+                    anim.start_animation(animation::AnimType::Walking);
                     anim.looping = true;
                 } else if rigidbody.velocity == Vec3::ZERO {
-                    anim.start_animation(animation::AnimType::Idle, Some(input));
+                    anim.start_animation(animation::AnimType::Idle);
                 } else {
                     anim.looping = true;
                 }
             } else {
-                anim.start_animation(AnimType::Idle, None);
+                anim.start_animation(AnimType::Idle);
                 anim.looping = false;
             }
         }
     }
+
+    gizmos.arrow(
+        transform.translation,
+        transform.translation + Vec3::from((***facing, 1.0)).xzy(),
+        palettes::basic::RED,
+    );
 
     cam_transform.translation = transform.translation.with_y(transform.translation.y + 10.);
 }
@@ -240,36 +275,4 @@ pub fn update_rigidbodies(
         }
         transform.translation += rigidbody.velocity * time.delta_secs();
     }
-}
-
-/// If observing, then the entity will be pushed outside of tilemaps
-pub fn move_out_from_tilemaps(
-    trigger: Trigger<CollisionEnterEvent>,
-    mut rigidbody: Query<(&DynamicCollision, &GlobalTransform, &mut Transform)>,
-    other_col: Query<(&BasicCollider, &GlobalTransform)>,
-    tile_data_query: Query<(&TileSlope, &TileFlags)>,
-    mut gizmos: Gizmos,
-) {
-    let Ok((rigidbody, gtransform, mut transform)) = rigidbody.get_mut(trigger.this) else {
-        return;
-    };
-
-    let Ok((collider, gtransform2)) = other_col.get(trigger.other) else {
-        return;
-    };
-
-    if !collider.layers.intersects(CollisionLayers::Wall) {
-        return;
-    }
-
-    let Ok((tile_slope, tile_flags)) = tile_data_query.get(trigger.other) else {
-        return;
-    };
-
-    let point = gtransform.translation().xz() - gtransform2.translation().xz();
-
-    let max = tile_slope.get_height_at_point(tile_flags, point);
-
-    transform.translation.y = max + gtransform2.translation().y;
-    gizmos.cross(transform.translation, 2., palettes::basic::NAVY);
 }

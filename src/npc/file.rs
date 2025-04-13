@@ -10,7 +10,7 @@ use bevy::utils::HashMap;
 use bevy_asset_loader::asset_collection::AssetCollection;
 use serde::Deserialize;
 use serde::Serialize;
-use short_flight::collision::{BasicCollider, ColliderShape};
+use crate::collision::{BasicCollider, ColliderShape};
 
 #[derive(Resource, AssetCollection)]
 pub(crate) struct NPCAlmanac {
@@ -21,7 +21,7 @@ pub(crate) struct NPCAlmanac {
     pub image_files: HashMap<NPC, Handle<Image>>,
 }
 
-#[derive(Asset, Reflect, Serialize, Deserialize, Clone, Default)]
+#[derive(Debug, Asset, Reflect, Serialize, Deserialize, Clone, Default)]
 pub(crate) struct NPCData {
     pub(crate) display_name: String,
     pub(crate) info: NPCInfo,
@@ -46,11 +46,24 @@ pub(crate) fn validate_npc_data(
                 data.spritesheet.atlas =
                     Some(asset_server.add(data.spritesheet.get_atlas_layout()));
             }
+            AssetEvent::LoadedWithDependencies { id } => {
+                let data = npc_datas.get_mut(*id).unwrap();
+                data.spritesheet.atlas =
+                    Some(asset_server.add(data.spritesheet.get_atlas_layout()));
+            }
             _ => (),
         }
     }
 
-    for (id, data) in npc_datas.iter_mut() {
-        assert!(data.spritesheet.atlas.is_some());
+    for (id, data) in npc_datas
+        .iter_mut()
+        .inspect(|item| log::info!("{:?}", item.1))
+    {
+        if asset_server.is_loaded(id) {
+            if !(data.spritesheet.atlas.is_some()) {
+                data.spritesheet.atlas =
+                    Some(asset_server.add(data.spritesheet.get_atlas_layout()));
+            }
+        }
     }
 }

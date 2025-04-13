@@ -1,11 +1,12 @@
 use crate::moves::interfaces::MoveData;
-use crate::{ldtk, moves, npc, player};
+use crate::projectile::interfaces::ProjectileData;
+use crate::{ldtk, moves, npc, player, projectile};
 use bevy::asset::AssetLoader;
 use bevy::prelude::*;
 use bevy::utils::HashMap;
 use bevy_asset_loader::prelude::*;
 use serde::{Deserialize, Serialize};
-use short_flight::animation::{AnimType, AnimationData};
+use crate::animation::{AnimType, AnimationData};
 use std::marker::PhantomData;
 use thiserror::Error;
 
@@ -25,6 +26,10 @@ impl Plugin for AssetsPlugin {
             ]))
             .init_asset::<MoveData>()
             .register_asset_loader(RonAssetLoader::<MoveData>::with_extension(&["move.ron"]))
+            .init_asset::<ProjectileData>()
+            .register_asset_loader(RonAssetLoader::<ProjectileData>::with_extension(&[
+                "proj.ron",
+            ]))
             .add_loading_state(
                 LoadingState::new(ShortFlightLoadingState::First)
                     .load_collection::<ldtk::MapAssets>()
@@ -41,6 +46,7 @@ impl Plugin for AssetsPlugin {
                 LoadingState::new(ShortFlightLoadingState::LoadNPCAssets)
                     .load_collection::<npc::file::NPCAlmanac>()
                     .load_collection::<moves::interfaces::MoveList>()
+                    .load_collection::<projectile::interfaces::ProjectileCatalog>()
                     .on_failure_continue_to_state(ShortFlightLoadingState::FailState)
                     .continue_to_state(ShortFlightLoadingState::SpawnWithAssets),
             )

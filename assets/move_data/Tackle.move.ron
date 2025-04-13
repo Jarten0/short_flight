@@ -1,6 +1,6 @@
 {
     display_name: "Tackle",
     spritesheet: None,
-    collider: Some(Circle(0.625)),
+    collider: Some(Circle(0.35)),
     range: 2.0 
 }

@@ -1,10 +1,10 @@
 use crate::moves::magical_leaf::MagicalLeaf;
 use crate::npc::animation::AnimationHandler;
-use crate::npc::stats::Damage;
+use crate::npc::stats::{Damage, FacingDirection};
 
 use super::ProjectileInterface;
+use crate::collision::{BasicCollider, ColliderShape};
 use bevy::prelude::*;
-use short_flight::collision::{BasicCollider, ColliderShape};
 
 #[derive(Component)]
 pub struct LeafAttack;
@@ -18,15 +18,17 @@ impl ProjectileInterface for LeafAttack {
         &mut self,
         world: &mut World,
         projectile_entity: Entity,
-        source: Entity,
+        source: Option<Entity>,
         projectile_data: &super::interfaces::ProjectileData,
     ) {
-        let (magical_leaf, damage) = world
-            .query::<(&MagicalLeaf, &Damage)>()
-            .get(world, source)
-            .unwrap();
-        let damage = damage.clone();
-        world.entity_mut(projectile_entity).insert((Self, damage));
+        if let Some(source) = source {
+            let (magical_leaf, damage) = world
+                .query::<(&MagicalLeaf, &Damage)>()
+                .get(world, source)
+                .unwrap();
+            let damage = damage.clone();
+            world.entity_mut(projectile_entity).insert((Self, damage));
+        }
     }
 }
 
@@ -36,7 +38,7 @@ pub fn process(
         &LeafAttack,
         &mut BasicCollider,
         &mut Transform,
-        &AnimationHandler,
+        &FacingDirection,
     )>,
     time: Res<Time>,
     mut commands: Commands,
@@ -49,6 +51,6 @@ pub fn process(
             }
         }
 
-        transform.translation += anim.direction().xxy().with_y(0.0) * time.delta_secs();
+        transform.translation += anim.xxy().with_y(0.0) * time.delta_secs() * 8.0;
     }
 }

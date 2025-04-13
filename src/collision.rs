@@ -4,6 +4,8 @@ use bevy::utils::hashbrown::{HashMap, HashSet};
 use bitflags::bitflags;
 use serde::{Deserialize, Serialize};
 
+pub mod physics;
+
 pub struct CollisionPlugin;
 
 impl Plugin for CollisionPlugin {
@@ -88,6 +90,7 @@ bitflags! {
         const Wall = 0b00000010;
         const NPC = 0b00000100;
         const Projectile = 0b00001000;
+        const Attack = 0b00010000;
     }
 }
 

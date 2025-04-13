@@ -1,12 +1,14 @@
-use crate::npc::ai::{NPCActions, NPCDesicion};
-use crate::player::Shaymin;
-
 use super::animation::AnimationHandler;
 use super::{animation, file::NPCAlmanac, file::NPCData, NPCInfo, NPC};
+use crate::collision::{
+    self, BasicCollider, ColliderShape, CollisionLayers, DynamicCollision, ZHitbox,
+};
+use crate::npc::ai::{NPCActions, NPCDesicion};
+use crate::npc::stats::FacingDirection;
+use crate::player::{self, Shaymin};
+use crate::sprite3d::{Sprite3d, Sprite3dBuilder, Sprite3dParams};
 use bevy::ecs::system::SystemState;
 use bevy::prelude::*;
-use short_flight::collision::{BasicCollider, ColliderShape, CollisionLayers};
-use short_flight::sprite3d::{Sprite3d, Sprite3dBuilder, Sprite3dParams};
 
 /// Spawns an NPC with the given NPC asset data
 ///
@@ -65,6 +67,7 @@ impl Command for SpawnNPC {
                     .single(&world),
             },
             NPCDesicion::default(),
+            FacingDirection::default(),
         );
         let collider_shape = data.collider.clone();
         let atlas = TextureAtlas {
@@ -96,18 +99,28 @@ impl Command for SpawnNPC {
         let mut entity = world.spawn((required, sprite_3d_bundle));
 
         if let Some(shape) = collider_shape {
-            entity.insert(BasicCollider::new(
-                true,
-                shape,
-                CollisionLayers::NPC,
-                CollisionLayers::Wall | CollisionLayers::NPC | CollisionLayers::Projectile,
-            ));
+            entity
+                .insert((
+                    BasicCollider::new(
+                        true,
+                        shape,
+                        CollisionLayers::NPC,
+                        CollisionLayers::Wall | CollisionLayers::NPC | CollisionLayers::Projectile,
+                    ),
+                    ZHitbox::default(),
+                    DynamicCollision::default(),
+                ))
+                .observe(collision::physics::move_out_from_tilemaps)
+                // .observe(collision::physics::take_hits)
+                ;
         }
 
+        log::info!("where err");
         if let Some(moves) = moves {
             entity.insert(moves);
         }
 
+        log::info!("here");
         match npcinfo {
             NPCInfo::None => (),
             NPCInfo::Silent => (),
@@ -118,6 +131,7 @@ impl Command for SpawnNPC {
                 entity.insert(stats);
             }
         };
+        log::info!("or der");
 
         let id = entity.id();
 

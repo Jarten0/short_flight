@@ -5,7 +5,18 @@ pub use interfaces::ProjectileInterface;
 use serde::{Deserialize, Serialize};
 
 #[derive(
-    Component, Default, Reflect, Sequence, Deserialize, Clone, Copy, PartialEq, Eq, PartialOrd, Hash,
+    Debug,
+    Component,
+    Default,
+    Reflect,
+    Sequence,
+    Deserialize,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Hash,
 )]
 pub enum Projectile {
     #[default]
@@ -32,14 +43,18 @@ impl MapKey for Projectile {
 pub mod interfaces {
     use super::{register_interface, Projectile};
     use crate::assets::AnimationSpritesheet;
+    use crate::collision::{
+        BasicCollider, ColliderShape, CollisionLayers, DynamicCollision, ZHitbox,
+    };
     use crate::npc::animation::AnimationHandler;
+    use crate::npc::stats::{Damage, FacingDirection};
+    use crate::sprite3d::{Sprite3dBuilder, Sprite3dParams};
     use bevy::ecs::system::SystemState;
     use bevy::prelude::*;
+    use bevy::text::cosmic_text::ttf_parser::name;
     use bevy::utils::hashbrown::HashMap;
     use bevy_asset_loader::asset_collection::AssetCollection;
     use serde::{Deserialize, Serialize};
-    use short_flight::collision::{BasicCollider, ColliderShape, CollisionLayers, ZHitbox};
-    use short_flight::sprite3d::{Sprite3dBuilder, Sprite3dParams};
 
     #[derive(Resource, AssetCollection)]
     pub(crate) struct ProjectileCatalog {
@@ -55,6 +70,8 @@ pub mod interfaces {
         pub(crate) display_name: String,
         pub(crate) spritesheet: AnimationSpritesheet,
         pub(crate) collider: ColliderShape,
+        #[serde(default)]
+        pub(crate) damage: Damage,
     }
 
     pub trait ProjectileInterface: Send + Sync {
@@ -67,7 +84,7 @@ pub mod interfaces {
             &mut self,
             world: &mut World,
             projectile_entity: Entity,
-            source: Entity,
+            source: Option<Entity>,
             projectile_data: &ProjectileData,
         ) {
             // world.entity_mut(projectile_entity).insert(Self);
@@ -87,8 +104,8 @@ pub mod interfaces {
             interfaces.iter_mut().for_each(|(_, registration)| {
                 registration.build(app);
             });
-            app.insert_resource(interfaces);
-            app.add_systems(PreUpdate, validate_npc_data);
+            app.insert_resource(interfaces)
+                .add_systems(PreUpdate, validate_npc_data);
         }
     }
 
@@ -96,18 +113,33 @@ pub mod interfaces {
     pub struct ProjectileInterfaces(HashMap<Projectile, Box<dyn ProjectileInterface>>);
 
     pub struct SpawnProjectile {
-        pub source: Entity,
+        pub source: Option<Entity>,
+        pub position: Vec3,
+        pub direction: Dir2,
         pub projectile_id: Projectile,
     }
 
     impl Command for SpawnProjectile {
         fn apply(self, world: &mut World) {
+            let display = match self
+                .source
+                .map(|entity| world.get::<Name>(entity))
+                .unwrap_or_default()
+            {
+                Some(name) => name.as_str().to_string(),
+                None => format!("{:?}", self.source),
+            };
+            log::info!(
+                "Spawning projectile: Source [{}] ID [{:?}]",
+                display,
+                self.projectile_id
+            );
             let catalog = world.resource::<ProjectileCatalog>();
             let data_assets = world.resource::<Assets<ProjectileData>>();
             let image_handle = catalog
                 .image_files
                 .get(&self.projectile_id)
-                .expect("The projectile catalog MUST exhaustively contain all projectile variants.")
+                .expect("The projectile catalog is missing an image variant.")
                 .clone_weak();
             let handle = catalog.data_files.get(&self.projectile_id).expect(
                 "The projectile catalog MUST exhaustively contain all projectile variants.",
@@ -116,9 +148,21 @@ pub mod interfaces {
                 "SpawnProjectile should not be called before all projectile data assets are loaded.",
             ).clone();
 
+            let source_transform = self.position;
+            // let source_transform = match self.source {
+            //     Some(source) => world
+            //         .get_entity(source)
+            //         .expect("Called SpawnProjectile with non-existant source")
+            //         .get::<GlobalTransform>()
+            //         .expect("Source entity does not have GlobalTransform")
+            //         .translation(),
+            //     None => Vec3::ZERO,
+            // };
+
             let id = world
                 .spawn((
                     self.projectile_id,
+                    FacingDirection(self.direction),
                     AnimationHandler::new(data.spritesheet.clone()),
                     BasicCollider::new(
                         true,
@@ -130,6 +174,10 @@ pub mod interfaces {
                         y_tolerance: 0.5,
                         neg_y_tolerance: 0.0,
                     },
+                    Transform::from_translation(source_transform)
+                        .with_rotation(Quat::from_rotation_x(f32::to_radians(-90.0))),
+                    data.damage.clone(),
+                    DynamicCollision::default(),
                 ))
                 .id();
 

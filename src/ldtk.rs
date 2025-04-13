@@ -1,4 +1,5 @@
 use crate::assets::ShortFlightLoadingState;
+use crate::collision::{BasicCollider, ColliderShape, CollisionLayers, StaticCollision, ZHitbox};
 use crate::npc;
 use crate::npc::NPC;
 use crate::tile::{TileDepth, TileFlags, TileSlope};
@@ -20,9 +21,6 @@ use bevy_ecs_tilemap::{
 use bevy_picking::pointer::PointerInteraction;
 use bitflags::bitflags;
 use serde::{Deserialize, Serialize};
-use short_flight::collision::{
-    BasicCollider, ColliderShape, CollisionLayers, StaticCollision, ZHitbox,
-};
 use short_flight::deserialize_file;
 use std::{collections::HashMap, io::ErrorKind};
 use thiserror::Error;

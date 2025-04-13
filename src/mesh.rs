@@ -1,3 +1,4 @@
+use crate::collision::ZHitbox;
 use crate::ldtk;
 use crate::tile::{TileDepth, TileFlags, TileSlope};
 use bevy::asset::RenderAssetUsages;
@@ -9,7 +10,6 @@ use bevy::render::primitives::Aabb;
 use bevy_ecs_tilemap::helpers::square_grid::neighbors::SquareDirection;
 use bevy_ecs_tilemap::prelude::*;
 use image::ImageBuffer;
-use short_flight::collision::ZHitbox;
 use short_flight::serialize_to_file;
 use std::collections::HashMap;
 

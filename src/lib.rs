@@ -8,11 +8,6 @@ use std::path::PathBuf;
 use enum_iterator::Sequence;
 use serde::{Deserialize, Serialize};
 
-pub mod animation;
-pub mod collision;
-pub mod editor;
-pub mod sprite3d;
-
 pub fn deserialize_files<T>(
     file_paths: impl IntoIterator<Item = impl Into<PathBuf>>,
 ) -> HashMap<PathBuf, T>

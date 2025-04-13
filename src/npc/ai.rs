@@ -1,5 +1,5 @@
+use crate::animation::AnimType;
 use bevy::prelude::*;
-use short_flight::animation::AnimType;
 
 use crate::moves::interfaces::{MoveData, MoveInterfaces, MoveList, Moves, SpawnMove};
 use crate::moves::tackle::Tackle;
@@ -7,6 +7,7 @@ use crate::moves::Move;
 use crate::player::Shaymin;
 
 use super::animation::AnimationHandler;
+use super::stats::FacingDirection;
 use super::NPCInfo;
 
 /// Describes the various states an NPC can be in,
@@ -169,11 +170,12 @@ pub(crate) fn commit_npc_actions(
         &NPCInfo,
         &NPCDesicion,
         &mut AnimationHandler,
+        &mut FacingDirection,
         &mut Transform,
     )>,
     time: Res<Time>,
 ) {
-    for (entity, info, desicion, mut anim, mut transform) in &mut query {
+    for (entity, info, desicion, mut anim, mut facing, mut transform) in &mut query {
         match desicion.clone() {
             NPCDesicion::Idle => (),
             NPCDesicion::Move { target: direction } => {
@@ -185,7 +187,10 @@ pub(crate) fn commit_npc_actions(
                     //     anim.update_direction(direction);
                     // }
                     // in case move does not override animation, provide blocking animation here
-                    anim.start_animation(AnimType::AttackTackle, direction);
+                    anim.start_animation(AnimType::AttackTackle);
+                    if let Some(dir) = direction {
+                        facing.set(dir);
+                    }
                     commands.queue(SpawnMove {
                         move_id,
                         parent: entity,
@@ -193,7 +198,7 @@ pub(crate) fn commit_npc_actions(
                 }
             }
             NPCDesicion::SetAnimation(anim_type) => {
-                anim.start_animation(anim_type, None);
+                anim.start_animation(anim_type);
             }
         }
     }

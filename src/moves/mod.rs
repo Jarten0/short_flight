@@ -48,14 +48,15 @@ pub mod interfaces {
     use super::prelude::*;
     use super::register_component;
     use super::Move;
+    use crate::animation::AnimType;
     use crate::assets::AnimationSpritesheet;
+    use crate::collision::ColliderShape;
     use crate::npc::animation::AnimationHandler;
+    use crate::npc::stats::Damage;
     use bevy::utils::hashbrown::HashMap;
     use bevy_asset_loader::asset_collection::AssetCollection;
     use bevy_asset_loader::mapped::MapKey;
     use serde::{Deserialize, Serialize};
-    use short_flight::animation::AnimType;
-    use short_flight::collision::ColliderShape;
 
     #[derive(
         Debug, Component, Reflect, Clone, Deref, DerefMut, Default, Serialize, Deserialize,
@@ -71,23 +72,21 @@ pub mod interfaces {
         fn build(&mut self, app: &mut App);
 
         /// Called whenever a move entity is spawned, right before this is inserted into the entity.
-        fn on_spawn(&mut self, world: &mut World, entity: Entity, move_data: &MoveData) {
+        ///
+        /// `move_entity` is the entity that is automatically spawned for the move.
+        fn on_spawn(&mut self, world: &mut World, move_entity: Entity, move_data: &MoveData) {
             // world.entity_mut(entity).insert(Self);
             // <Self as MoveComponent>::set_animation(world, entity, AnimType::AttackTackle, None);
         }
 
-        fn set_animation(
-            world: &mut World,
-            move_entity: Entity,
-            animation: AnimType,
-            direction: Option<Dir2>,
-        ) where
+        fn set_animation(world: &mut World, move_entity: Entity, animation: AnimType)
+        where
             Self: Sized,
         {
             world
                 .get_mut::<AnimationHandler>(Self::parent(world, move_entity))
                 .unwrap()
-                .start_animation(animation, direction)
+                .start_animation(animation)
         }
 
         fn parent(world: &World, move_entity: Entity) -> Entity
@@ -175,7 +174,11 @@ pub mod interfaces {
                     id: self.move_id,
                     data: handle.clone(),
                 },
+                Damage(2),
+                Transform::default(),
             );
+            // world.entity_mut(self.parent).with_child(bundle).id();
+
             let entity = world.spawn(bundle).set_parent(self.parent).id();
 
             world.resource_scope(|world, mut move_interfaces: Mut<MoveInterfaces>| {

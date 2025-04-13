@@ -1,3 +1,4 @@
+use super::stats::FacingDirection;
 use super::NPC;
 use crate::assets::AnimationSpritesheet;
 use crate::moves::interfaces::MoveInfo;
@@ -6,11 +7,12 @@ use bevy::math::Affine2;
 use bevy::prelude::*;
 use bevy::utils::HashMap;
 use bevy_inspector_egui::egui::epaint::text::layout;
-use short_flight::animation::{AnimType, AnimationData, AnimationDirLabel};
-use short_flight::sprite3d::Sprite3d;
+use crate::animation::{AnimType, AnimationData, AnimationDirLabel};
+use crate::sprite3d::Sprite3d;
 
 /// Handles the state managment of the NPC
 #[derive(Debug, Component)]
+#[require(FacingDirection)]
 pub(crate) struct AnimationHandler {
     current: AnimType,
     /// how far the animation has progressed in seconds.
@@ -18,8 +20,7 @@ pub(crate) struct AnimationHandler {
     frame: f32,
     /// time modifier to alter how quickly frame increases
     speed: f32,
-    /// the direction the entity is facing
-    direction: Dir2,
+
     pub animations: HashMap<AnimType, AnimationData>,
     pub spritesheet: AnimationSpritesheet,
     pub looping: bool,
@@ -29,7 +30,6 @@ impl AnimationHandler {
     pub fn new(spritesheet: AnimationSpritesheet) -> AnimationHandler {
         Self {
             current: AnimType::Idle,
-            direction: Dir2::NEG_Y,
             animations: spritesheet.data.0.clone(),
             spritesheet,
             frame: 0.0,
@@ -38,6 +38,7 @@ impl AnimationHandler {
         }
     }
 
+
     pub fn update(&mut self, delta: f32) -> bool {
         let Some(animation_data) = self.animations.get(&self.current) else {
             log::error!("Could not find animation data for {:?}", self.current);
@@ -45,9 +46,9 @@ impl AnimationHandler {
             return true;
         };
 
-        if animation_data.process_timer(&mut self.frame, delta ) {
+        if animation_data.process_timer(&mut self.frame, delta * self.speed ) {
             if !self.looping {
-                self.start_animation(AnimType::Idle, None);
+                self.start_animation(AnimType::Idle);
             }
             true
         } else {
@@ -55,22 +56,20 @@ impl AnimationHandler {
         }
     }
 
-    pub fn get_current_atlas(&self) -> Option<TextureAtlas> {
+    pub fn get_current_atlas(&self, direction: &FacingDirection) -> Option<TextureAtlas> {
         let Some(handle) = self.spritesheet.atlas.as_ref() else {
             return None;
         };
         let layout = handle.clone_weak();
 
-        let Some((index, _)) = self.get_atlas_index() else {
-            return (None);
-        };
+        let (index, _flip) = self.get_atlas_index(direction)?;
 
         let index = self.frame.floor() as usize + (index * self.spritesheet.max_frames as usize);
 
         Some(TextureAtlas { layout, index })
     }
 
-    fn get_atlas_index(&self) -> Option<(usize, BVec2)> {
+    fn get_atlas_index(&self, direction: &FacingDirection) -> Option<(usize, BVec2)> {
         let mut index = 0;
         for id in &self.spritesheet.animations {
             if self.current == *id {
@@ -87,7 +86,7 @@ impl AnimationHandler {
         let (offset, flip) = self
             .animation_data()
             .direction_label
-            .get_index_offset(self.direction);
+            .get_index_offset(direction);
         index += offset;
         Some((index, flip))
     }
@@ -106,10 +105,6 @@ impl AnimationHandler {
 
     pub fn current(&self) -> AnimType {
         self.current
-    }
-
-    pub fn direction(&self) -> Dir2 {
-        self.direction
     }
 
     pub fn animation_data(&self) -> &AnimationData {
@@ -131,18 +126,11 @@ impl AnimationHandler {
         self.spritesheet.data.0.get(&self.current)
     }
 
-    pub fn update_direction(&mut self, direction: Dir2) {
-        self.direction = direction;
-    }
-
     /// Should only be called if [`AnimationData::is_blocking`] is false
-    pub fn start_animation(&mut self, animation: AnimType, direction: Option<Dir2>) {
+    pub fn start_animation(&mut self, animation: AnimType) {
         self.looping = false;
         self.frame = 0.0;
         self.current = animation;
-        if let Some(direction) = direction {
-            self.direction = direction;
-        }
     }
 }
 
@@ -167,14 +155,14 @@ pub(super) fn update_npc_sprites(
     mut npcs: Query<(
         &mut Sprite3d,
         &MeshMaterial3d<StandardMaterial>,
-        AnyOf<(&AnimationHandler, &ClientChild)>,
+        AnyOf<((&AnimationHandler, &FacingDirection), &ClientChild)>,
     )>,
-    client: ClientQuery<Option<&AnimationHandler>>,
+    client: ClientQuery<Option<(&AnimationHandler, &FacingDirection)>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
     for (mut sprite, material, options) in &mut npcs {
         let Some(atlas) = (match options.0.or(*client) {
-            Some(anim) => anim.get_current_atlas(),
+            Some((anim, dir)) => anim.get_current_atlas(dir),
             None => None,
         }) else {
             continue;
@@ -183,11 +171,11 @@ pub(super) fn update_npc_sprites(
         sprite.texture_atlas = Some(atlas);
 
         // custom flip code to try and flip atlased sprites in place instead of as the whole texture
-        let Some(anim) = options.0.or(*client) else {
+        let Some((anim, dir)) = options.0.or(*client) else {
             continue;
         };
 
-        let Some((index, flip)) = anim.get_atlas_index() else {
+        let Some((index, flip)) = anim.get_atlas_index(dir) else {
             continue;
         };
 
