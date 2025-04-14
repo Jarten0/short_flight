@@ -651,7 +651,7 @@ fn save_tile_data(
 
         depths += serialize_to_file(depth_info, root.with_extension(".depth.ron")) as usize;
         slopes += serialize_to_file(slope_info, root.with_extension(".slope.ron")) as usize;
-        flags += serialize_to_file(flag_info, root.with_extension(".flag.ron")) as usize;
+        flags += serialize_to_file(flag_info, root.with_extension(".flags.ron")) as usize;
     }
     log::info!(
         "Saved {} depth maps, {} slope maps, and {} flag maps.",

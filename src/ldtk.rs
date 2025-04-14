@@ -26,13 +26,15 @@ use std::io::ErrorKind;
 use std::path::PathBuf;
 use thiserror::Error;
 
+const TILEMAP_PATH: &str = "assets/map_data/";
+
 #[derive(AssetCollection, Resource)]
 pub struct MapAssets {
     #[asset(path = "tilemap.ldtk")]
     pub map: Handle<LdtkMap>,
 }
 
-#[derive(Debug, Component, Clone, Deref, DerefMut, PartialEq)]
+#[derive(Debug, Component, Reflect, Clone, Deref, DerefMut, PartialEq)]
 pub struct LevelMetadataPath(String);
 
 impl From<PathBuf> for LevelMetadataPath {
@@ -327,7 +329,7 @@ fn spawn_map_components(commands: &mut Commands, ldtk_map: &LdtkMap, map_config:
             }
         }
 
-        let root = PathBuf::from("assets/depth_maps/".to_string() + &level.identifier);
+        let root = PathBuf::from(TILEMAP_PATH.to_owned() + &level.identifier);
 
         let mut tile_depth_map = get::<TileDepth>(&root, ".depth.ron");
         let mut tile_slope_map = get::<TileSlope>(&root, ".slope.ron");
