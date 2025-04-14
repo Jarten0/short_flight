@@ -3,7 +3,7 @@
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::{Read, Write};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use enum_iterator::Sequence;
 use serde::{Deserialize, Serialize};
@@ -63,7 +63,7 @@ where
     Ok(tile_depth_map)
 }
 
-pub fn serialize_to_file(serializable: impl Serialize, path: &str) -> bool {
+pub fn serialize_to_file(serializable: impl Serialize, path: impl AsRef<Path>) -> bool {
     let buf = match ron::to_string(&serializable) {
         Ok(t) => t,
         Err(e) => {

@@ -1,12 +1,13 @@
 #![feature(int_roundings)]
 #![feature(generic_arg_infer)]
+#![feature(path_add_extension)]
 
 use bevy::prelude::*;
 
-pub mod animation;
-pub mod collision;
-pub mod editor;
-pub mod sprite3d;
+pub(crate) mod animation;
+pub(crate) mod collision;
+pub(crate) mod editor;
+pub(crate) mod sprite3d;
 
 mod assets;
 mod ldtk;

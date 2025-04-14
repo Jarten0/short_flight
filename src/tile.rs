@@ -175,6 +175,15 @@ impl TileSlope {
 /// Bitflags for how the tile should be visibly changed
 ///
 /// Rotation bitflags are assumed to be clockwise
+///
+/// Flags:
+/// * FlipX = 0b1;
+/// * FlipY = 0b1 << 1;
+/// * RotateClockwise = 0b1 << 2;
+/// * RotateCounterClockwise = 0b1 << 3;
+/// * FlipTriangles = 0b1 << 4;
+/// * Exclusive = 0b1 << 5;
+/// * Fold = 0b1 << 6;
 #[derive(Debug, Reflect, Component, Default, Clone, Copy, Serialize, Deserialize, PartialEq)]
 #[serde(transparent)]
 pub struct TileFlags(u32);

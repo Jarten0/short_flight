@@ -1,5 +1,5 @@
 use crate::collision::ZHitbox;
-use crate::ldtk;
+use crate::ldtk::{self, LevelMetadataPath};
 use crate::tile::{TileDepth, TileFlags, TileSlope};
 use bevy::asset::RenderAssetUsages;
 use bevy::color::palettes;
@@ -624,13 +624,16 @@ fn adjust_tiles_via_keystrokes(
 /// since values not given are initialized to their defaults anyway.
 fn save_tile_data(
     _save: Trigger<GoSaveTheMesh>,
-    tilemaps: Query<&TileStorage>,
+    tilemaps: Query<(&TileStorage, &LevelMetadataPath)>,
     tiles: Query<(&TilePos, &TileDepth, &TileSlope, &TileFlags)>,
 ) {
-    let mut depth_info: HashMap<[u32; 2], &TileDepth> = HashMap::new();
-    let mut slope_info: HashMap<[u32; 2], &TileSlope> = HashMap::new();
-    let mut flag_info: HashMap<[u32; 2], &TileFlags> = HashMap::new();
-    for tilemap in tilemaps.iter() {
+    let mut depths = 0;
+    let mut slopes = 0;
+    let mut flags = 0;
+    for (tilemap, root) in tilemaps.iter() {
+        let mut depth_info: HashMap<[u32; 2], &TileDepth> = HashMap::new();
+        let mut slope_info: HashMap<[u32; 2], &TileSlope> = HashMap::new();
+        let mut flag_info: HashMap<[u32; 2], &TileFlags> = HashMap::new();
         tilemap
             .iter()
             .filter_map(|item| item.map(|item| tiles.get(item).ok()).unwrap_or_default())
@@ -645,20 +648,17 @@ fn save_tile_data(
                     flag_info.insert([pos.x, pos.y], flags);
                 }
             });
-    }
 
-    let path = "assets/depth_maps/tile_depth_map.ron";
-    if serialize_to_file(depth_info, path) {
-        log::info!("Saved tile depth map!")
+        depths += serialize_to_file(depth_info, root.with_extension(".depth.ron")) as usize;
+        slopes += serialize_to_file(slope_info, root.with_extension(".slope.ron")) as usize;
+        flags += serialize_to_file(flag_info, root.with_extension(".flag.ron")) as usize;
     }
-    let path = "assets/depth_maps/tile_slope_map.ron";
-    if serialize_to_file(slope_info, path) {
-        log::info!("Saved tile slope map!")
-    }
-    let path = "assets/depth_maps/tile_flag_map.ron";
-    if serialize_to_file(flag_info, path) {
-        log::info!("Saved tile flag map!")
-    }
+    log::info!(
+        "Saved {} depth maps, {} slope maps, and {} flag maps.",
+        depths,
+        slopes,
+        flags
+    );
 }
 
 fn call_save_event(kb: Res<ButtonInput<KeyCode>>, mut saves: EventWriter<GoSaveTheMesh>) {

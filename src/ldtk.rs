@@ -6,6 +6,7 @@ use crate::tile::{TileDepth, TileFlags, TileSlope};
 use bevy::color::palettes;
 use bevy::ecs::system::SystemState;
 use bevy::prelude::Asset;
+use bevy::utils::HashMap;
 use bevy::{asset::io::Reader, reflect::TypePath};
 use bevy::{
     asset::{AssetLoader, AssetPath, LoadContext},
@@ -19,16 +20,33 @@ use bevy_ecs_tilemap::{
     TilemapBundle,
 };
 use bevy_picking::pointer::PointerInteraction;
-use bitflags::bitflags;
 use serde::{Deserialize, Serialize};
 use short_flight::deserialize_file;
-use std::{collections::HashMap, io::ErrorKind};
+use std::io::ErrorKind;
+use std::path::PathBuf;
 use thiserror::Error;
 
 #[derive(AssetCollection, Resource)]
 pub struct MapAssets {
     #[asset(path = "tilemap.ldtk")]
     pub map: Handle<LdtkMap>,
+}
+
+#[derive(Debug, Component, Clone, Deref, DerefMut, PartialEq)]
+pub struct LevelMetadataPath(String);
+
+impl From<PathBuf> for LevelMetadataPath {
+    fn from(value: PathBuf) -> Self {
+        Self(value.to_string_lossy().to_string())
+    }
+}
+
+impl LevelMetadataPath {
+    pub fn with_extension(&self, extension: &str) -> PathBuf {
+        let mut path_buf = PathBuf::from(&self.0);
+        path_buf.add_extension(extension);
+        path_buf
+    }
 }
 
 #[derive(Default)]
@@ -253,17 +271,6 @@ fn spawn_map(
 }
 
 fn spawn_map_components(commands: &mut Commands, ldtk_map: &LdtkMap, map_config: &LdtkMapConfig) {
-    let mut tile_depth_map: HashMap<[u32; 2], TileDepth> =
-        deserialize_file("assets/depth_maps/tile_depth_map.ron").unwrap_or_default();
-    let mut tile_slope_map: HashMap<[u32; 2], TileSlope> =
-        deserialize_file("assets/depth_maps/tile_slope_map.ron").unwrap_or_default();
-    let mut tile_flag_map: HashMap<[u32; 2], TileFlags> =
-        deserialize_file("assets/depth_maps/tile_flag_map.ron").unwrap_or_default();
-
-    log::info!("Found tilemap depth data of {} tiles", tile_depth_map.len());
-    log::info!("Found tilemap slope data of {} tiles", tile_slope_map.len());
-    log::info!("Found tilemap flag data of {} tiles", tile_flag_map.len());
-
     // Pull out tilesets and their definitions into a new hashmap
     let mut tilesets = HashMap::new();
     ldtk_map.project.defs.tilesets.iter().for_each(|tileset| {
@@ -300,6 +307,33 @@ fn spawn_map_components(commands: &mut Commands, ldtk_map: &LdtkMap, map_config:
             .iter()
             .find(|level| level.uid == layer.level_id)
             .unwrap();
+
+        fn get<T: for<'a> Deserialize<'a> + Default>(
+            root_path: &PathBuf,
+            extension: &str,
+        ) -> HashMap<[u32; 2], T> {
+            let mut r = root_path.clone();
+            r.add_extension(extension);
+
+            match deserialize_file::<HashMap<[u32; 2], T>>(&r) {
+                Ok(some) => {
+                    log::info!("Found {:?} data of {} tiles", r, some.len());
+                    some
+                }
+                Err(_err) => {
+                    log::error!("Could not find tile data for {:?}", r);
+                    Default::default()
+                }
+            }
+        }
+
+        let root = PathBuf::from("assets/depth_maps/".to_string() + &level.identifier);
+
+        let mut tile_depth_map = get::<TileDepth>(&root, ".depth.ron");
+        let mut tile_slope_map = get::<TileSlope>(&root, ".slope.ron");
+        let mut tile_flag_map = get::<TileFlags>(&root, ".flag.ron");
+
+        let metadata_path = LevelMetadataPath::from(root);
 
         let tilemap_transform = Transform::from_xyz(
             level.world_x as f32 / size.x as f32,
@@ -430,6 +464,7 @@ fn spawn_map_components(commands: &mut Commands, ldtk_map: &LdtkMap, map_config:
                     transform: tilemap_transform,
                     ..default()
                 },
+                metadata_path,
                 Name::new(format!("Tilemap #{}", layer_id)),
             ))
             .id();
