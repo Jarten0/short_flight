@@ -59,6 +59,7 @@ pub struct BasicCollider {
     pub shape: ColliderShape,
     pub layers: CollisionLayers,
     pub can_interact: CollisionLayers,
+    /// Only stored if
     pub currently_colliding: HashSet<Entity>,
 }
 
@@ -79,6 +80,12 @@ impl BasicCollider {
     }
 }
 
+/// Flags:
+/// * Default    = 0b00000001;
+/// * Wall       = 0b00000010;
+/// * NPC        = 0b00000100;
+/// * Projectile = 0b00001000;
+/// * Attack     = 0b00010000;
 #[derive(Debug, Clone, Reflect, Serialize, Deserialize)]
 // #[serde(transparent)]
 pub struct CollisionLayers(u32);
@@ -334,7 +341,7 @@ pub fn process_collisions(collision_tracker: Res<CollisionTracker>, mut commands
                         this: entity,
                         other: entity2,
                     })
-                    .queue(DeferCollidingUpdate {
+                    .queue(DeferColliderUpdate {
                         enter: true,
                         other: entity2,
                     });
@@ -345,7 +352,7 @@ pub fn process_collisions(collision_tracker: Res<CollisionTracker>, mut commands
                         this: entity,
                         other: entity2,
                     })
-                    .queue(DeferCollidingUpdate {
+                    .queue(DeferColliderUpdate {
                         enter: false,
                         other: entity2,
                     });
@@ -400,12 +407,12 @@ pub fn propogate_collision_events(
     }
 }
 
-struct DeferCollidingUpdate {
+struct DeferColliderUpdate {
     enter: bool,
     other: Entity,
 }
 
-impl EntityCommand for DeferCollidingUpdate {
+impl EntityCommand for DeferColliderUpdate {
     fn apply(self, entity: Entity, world: &mut World) {
         if self.enter {
             world

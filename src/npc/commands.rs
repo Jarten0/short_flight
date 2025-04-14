@@ -58,8 +58,7 @@ impl Command for SpawnNPC {
                 .with_rotation(Quat::from_rotation_x(f32::to_radians(-90.0))),
             Name::new(self.name.clone().unwrap_or(data.display_name.clone())),
         );
-        let stats = (
-            data.stats.clone().unwrap(),
+        let animation = (
             AnimationHandler::new(data.spritesheet.clone()),
             NPCActions::Offensive {
                 focus: world
@@ -76,6 +75,7 @@ impl Command for SpawnNPC {
         };
         let npcinfo = data.info.clone();
         let moves = data.moves.clone();
+        let stats = data.stats.clone();
 
         // Construct a `SystemState` struct, passing in a tuple of `SystemParam`
         // as if you were writing an ordinary system.
@@ -96,48 +96,50 @@ impl Command for SpawnNPC {
 
         drop(data);
 
+        let name = required.3.to_string();
         let mut entity = world.spawn((required, sprite_3d_bundle));
+        let mut observe_collision = false;
+        let mut has_stats = false;
 
         if let Some(shape) = collider_shape {
-            entity
-                .insert((
-                    BasicCollider::new(
-                        true,
-                        shape,
-                        CollisionLayers::NPC,
-                        CollisionLayers::Wall | CollisionLayers::NPC | CollisionLayers::Projectile,
-                    ),
-                    ZHitbox::default(),
-                    DynamicCollision::default(),
-                ))
-                .observe(collision::physics::move_out_from_tilemaps)
-                // .observe(collision::physics::take_hits)
-                ;
+            entity.insert((
+                BasicCollider::new(
+                    true,
+                    shape,
+                    CollisionLayers::NPC,
+                    CollisionLayers::Wall | CollisionLayers::NPC | CollisionLayers::Projectile,
+                ),
+                ZHitbox::default(),
+                DynamicCollision::default(),
+            ));
+            observe_collision = true;
         }
 
-        log::info!("where err");
         if let Some(moves) = moves {
             entity.insert(moves);
         }
 
-        log::info!("here");
-        match npcinfo {
-            NPCInfo::None => (),
-            NPCInfo::Silent => (),
-            NPCInfo::Enemy { .. } => {
-                entity.insert(stats);
+        match (npcinfo, stats) {
+            (NPCInfo::None, _) => (),
+            (NPCInfo::Silent, _) => {
+                entity.insert(animation);
             }
-            NPCInfo::Team { .. } => {
+            (NPCInfo::Enemy { .. }, Some(stats)) | (NPCInfo::Team { .. }, Some(stats)) => {
+                entity.insert(animation);
                 entity.insert(stats);
+                has_stats = true;
             }
+            _ => panic!("Invalid NPC configuration (Missing stats in {:#?})", name),
         };
-        log::info!("or der");
 
-        let id = entity.id();
+        // these are called later because calling entity.insert() after .observe() seemingly crashes things
+        if observe_collision {
+            entity.observe(collision::physics::move_out_from_tilemaps);
+        }
+        if has_stats {
+            entity.observe(collision::physics::take_hits);
+        }
 
-        log::info!(
-            "Spawned NPC: {}",
-            world.query::<&Name>().get(world, id).unwrap().as_str()
-        );
+        log::info!("Spawned NPC: {}", name);
     }
 }

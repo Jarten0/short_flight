@@ -38,25 +38,25 @@ pub fn move_out_from_tilemaps(
 /// If observed by an entity, this entity will collide with projectiles and attacks
 pub fn take_hits(
     trigger: Trigger<CollisionEnterEvent>,
-    // mut this_rigidbody: Query<(&mut Health)>,
-    // other_col: Query<(&BasicCollider)>,
-    // other_query: Query<(&Damage)>,
+    mut this_rigidbody: Query<(&mut Health)>,
+    other_col: Query<(&BasicCollider)>,
+    other_query: Query<(&Damage)>,
 ) {
-    // let Ok((mut health)) = this_rigidbody.get_mut(trigger.this) else {
-    //     return;
-    // };
+    let Ok((mut health)) = this_rigidbody.get_mut(trigger.this) else {
+        return;
+    };
 
-    // let Ok((colliding)) = other_col.get(trigger.other) else {
-    //     return;
-    // };
+    let Ok((colliding)) = other_col.get(trigger.other) else {
+        return;
+    };
 
-    // if !colliding.layers.intersects(CollisionLayers::Projectile) {
-    //     return;
-    // }
+    if !colliding.layers.intersects(CollisionLayers::Projectile) {
+        return;
+    }
 
-    // let Ok((damage)) = other_query.get(trigger.other) else {
-    //     return;
-    // };
+    let Ok((damage)) = other_query.get(trigger.other) else {
+        return;
+    };
 
-    // health.hp -= **damage;
+    health.hp -= **damage;
 }

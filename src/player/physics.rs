@@ -14,7 +14,7 @@ use bevy::prelude::*;
 
 #[derive(Debug, Component)]
 #[require(DynamicCollision)]
-pub struct ShayminRigidbody {
+pub struct RigidbodyProperties {
     grounded: Option<Entity>,
     velocity: Vec3,
 }
@@ -31,7 +31,7 @@ pub fn setup(shaymin: Client, mut commands: Commands) {
             y_tolerance: 0.5,
             neg_y_tolerance: 0.0,
         },
-        ShayminRigidbody {
+        RigidbodyProperties {
             grounded: None,
             velocity: Vec3::default(),
         },
@@ -41,7 +41,7 @@ pub fn setup(shaymin: Client, mut commands: Commands) {
         .entity(*shaymin)
         .observe(collision::physics::move_out_from_tilemaps)
         .observe(
-            |trigger: Trigger<CollisionEnterEvent>, mut query: Query<&mut ShayminRigidbody>| {
+            |trigger: Trigger<CollisionEnterEvent>, mut query: Query<&mut RigidbodyProperties>| {
                 let Ok(mut rigidbody) = query.get_mut(trigger.this) else {
                     return;
                 };
@@ -49,7 +49,7 @@ pub fn setup(shaymin: Client, mut commands: Commands) {
             },
         )
         .observe(
-            |trigger: Trigger<CollisionExitEvent>, mut query: Query<&mut ShayminRigidbody>| {
+            |trigger: Trigger<CollisionExitEvent>, mut query: Query<&mut RigidbodyProperties>| {
                 let Ok(mut rigidbody) = query.get_mut(trigger.this) else {
                     return;
                 };
@@ -63,7 +63,7 @@ pub fn control_shaymin(
     shaymin: ClientQuery<
         (
             &Transform,
-            &mut ShayminRigidbody,
+            &mut RigidbodyProperties,
             Option<&mut AnimationHandler>,
             &mut FacingDirection,
         ),
@@ -246,13 +246,19 @@ pub fn update_dynamic_collision(mut dyn_collision: Query<(&mut DynamicCollision,
 }
 
 pub fn update_rigidbodies(
-    mut dyn_collision: Query<(
-        &mut ShayminRigidbody,
-        &mut Transform,
-        &GlobalTransform,
-        &BasicCollider,
-    )>,
-    tile_data_query: Query<(&GlobalTransform, &TileSlope, &TileFlags), Without<ShayminRigidbody>>,
+    mut dyn_collision: Query<
+        (
+            &mut RigidbodyProperties,
+            &mut Transform,
+            &GlobalTransform,
+            &BasicCollider,
+        ),
+        With<DynamicCollision>,
+    >,
+    tile_data_query: Query<
+        (&GlobalTransform, &TileSlope, &TileFlags),
+        Without<RigidbodyProperties>,
+    >,
     time: Res<Time>,
 ) {
     for (mut rigidbody, mut transform, gtransform, basic_collider) in &mut dyn_collision {
