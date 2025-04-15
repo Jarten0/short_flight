@@ -1,7 +1,7 @@
 [package]
 name = "short_flight"
 version = "0.1.0"
-edition = "2021"
+edition = "2024"
 default-run = "short_flight"
 
 # Enable a small amount of optimization in the dev profile.
@@ -32,7 +32,7 @@ opt-level = "s"
 strip = "debuginfo"
 
 [dependencies]
-bevy = { version = "0.15.1", features = [
+bevy = { version = "0.16.0-rc.5", features = [
     "dynamic_linking",
     "android-game-activity",
     "android_shared_stdcxx",
@@ -69,14 +69,15 @@ bevy = { version = "0.15.1", features = [
     "x11",
     "bevy_remote",
 ], default-features = false }
-bevy-inspector-egui = "0.29.1"
-bevy_asset_loader = { version = "0.22.0", features = [
+bevy-inspector-egui = "0.30.0"
+bevy_asset_loader = { version = "0.23.0-rc.2", git = "https://github.com/NiklasEi/bevy_asset_loader/", rev = "refs/pull/252/head", features = [
     "3d",
     "standard_dynamic_assets",
 ] }
-bevy_ecs_tilemap = "0.15.0"
-bevy_editor_cam = "0.5.0"
-bevy_picking = "0.15.1"
+
+bevy_ecs_tilemap = { version = "0.16.0-rc.1", git = "https://github.com/StarArawn/bevy_ecs_tilemap/", rev = "refs/pull/607/head" }
+# bevy_editor_cam = "0.5.0"
+bevy_picking = "0.16.0-rc.5"
 # bevy_sprite3d = "4.0.0" # original repo @ https://github.com/FraserLee/bevy_sprite3d, cloned and modified in sprite3d.rs
 bitflags = { version = "2.9.0", features = ["serde"] }
 enum-iterator = "2.1.0"
