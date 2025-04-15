@@ -14,23 +14,25 @@ impl Plugin for CollisionPlugin {
             .add_event::<CollisionExitEvent>()
             .init_resource::<CollisionTracker>()
             .register_type::<BasicCollider>()
+            .add_systems(FixedFirst, physics::update_dynamic_collision)
             .add_systems(
                 FixedPostUpdate,
                 (
-                    // run GlobalTransform synchronization here for query_overlaps
+                    physics::update_rigidbodies,
+                    // run GlobalTransform synchronization here since query_overlaps needs
                     (
                         bevy::transform::systems::propagate_transforms,
                         bevy::transform::systems::sync_simple_transforms,
                     ),
                     query_overlaps, // this uses the latest GlobalTransform, but doesn't change any Transform's
-                    (
-                        bevy::transform::systems::propagate_transforms,
-                        bevy::transform::systems::sync_simple_transforms,
-                    ),
-                    process_collisions,
+                    // (
+                    //     bevy::transform::systems::propagate_transforms,
+                    //     bevy::transform::systems::sync_simple_transforms,
+                    // ),
+                    process_collisions_and_send_events,
                     propogate_collision_events, // this will be changing Transform's after GlobalTransform is used
-                    // GlobalTransforms will be finally updated in PostUpdate
                     cleanup_collision_tracker,
+                    // GlobalTransforms will be finally updated in PostUpdate
                 )
                     .chain(),
             );
@@ -329,7 +331,10 @@ pub fn query_overlaps(
     }
 }
 
-pub fn process_collisions(collision_tracker: Res<CollisionTracker>, mut commands: Commands) {
+pub fn process_collisions_and_send_events(
+    collision_tracker: Res<CollisionTracker>,
+    mut commands: Commands,
+) {
     for (entity, colliding) in &collision_tracker.current_collisions {
         let entity = *entity;
         for (entity2, result) in colliding {

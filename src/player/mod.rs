@@ -9,7 +9,18 @@ use bevy::prelude::*;
 
 mod anim_state;
 pub mod assets;
-mod physics;
+mod controller;
+
+/// Marker component for the client state parent entity.
+/// Used primarily for player logic.
+#[derive(Debug, Component, Reflect, Clone)]
+pub struct Shaymin;
+
+pub type Client<'a> = Single<'a, Entity, With<Shaymin>>;
+pub type ClientQuery<'a, T, F = ()> = Single<'a, T, (With<Shaymin>, F)>;
+
+#[derive(Debug, Component)]
+pub struct ClientChild;
 
 /// Insert into world's that manage client-player state for the silly little goober :3
 ///
@@ -21,29 +32,17 @@ pub struct ShayminPlugin;
 impl Plugin for ShayminPlugin {
     fn build(&self, app: &mut App) {
         app.world_mut().spawn(Shaymin);
-        app.add_systems(Startup, (setup, physics::setup))
+        app.add_systems(Startup, (setup, controller::setup))
             .add_systems(
                 OnEnter(ShortFlightLoadingState::PlayerLoading),
                 insert_animation,
             )
             .add_systems(OnEnter(ShortFlightLoadingState::Done), insert_sprite)
-            .add_systems(FixedFirst, physics::update_dynamic_collision)
-            .add_systems(
-                FixedUpdate,
-                (physics::control_shaymin, physics::update_rigidbodies).chain(),
-            )
-            .add_systems(PostUpdate, (physics::draw_colliders).chain())
+            .add_systems(FixedUpdate, (controller::control_shaymin))
+            .add_systems(PostUpdate, (controller::draw_colliders).chain())
             .add_systems(OnEnter(ShortFlightLoadingState::FailState), retry);
     }
 }
-
-/// Marker component for the client state parent entity.
-/// Used primarily for player logic.
-#[derive(Debug, Component, Reflect, Clone)]
-pub struct Shaymin;
-
-pub type Client<'a> = Single<'a, Entity, With<Shaymin>>;
-pub type ClientQuery<'a, T, F = ()> = Single<'a, T, (With<Shaymin>, F)>;
 
 fn setup(shaymin: Client, mut commands: Commands) {
     commands.entity(*shaymin).insert((
@@ -90,9 +89,6 @@ fn insert_sprite(
         ClientChild,
     ));
 }
-
-#[derive(Debug, Component)]
-pub struct ClientChild;
 
 /// Runs if any of the assets cannot be loaded
 fn retry(mut commands: Commands, asset_server: Res<AssetServer>) {

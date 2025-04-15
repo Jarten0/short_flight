@@ -1,5 +1,6 @@
 use super::{Client, ClientQuery};
 use crate::animation::{self, cardinal, AnimType};
+use crate::collision::physics::RigidbodyProperties;
 use crate::collision::{
     self, BasicCollider, ColliderShape, CollisionEnterEvent, CollisionExitEvent, CollisionLayers,
     DynamicCollision, StaticCollision, ZHitbox,
@@ -11,13 +12,6 @@ use crate::npc::stats::FacingDirection;
 use crate::tile::{TileFlags, TileSlope};
 use bevy::color::palettes;
 use bevy::prelude::*;
-
-#[derive(Debug, Component)]
-#[require(DynamicCollision)]
-pub struct RigidbodyProperties {
-    grounded: Option<Entity>,
-    velocity: Vec3,
-}
 
 pub fn setup(shaymin: Client, mut commands: Commands) {
     commands.entity(*shaymin).insert((
@@ -234,51 +228,5 @@ pub fn draw_colliders(
                 color.with_green(0.5),
             );
         }
-    }
-}
-
-pub fn update_dynamic_collision(mut dyn_collision: Query<(&mut DynamicCollision, &Transform)>) {
-    for (mut dyn_info, transform) in &mut dyn_collision {
-        if dyn_info.previous_position != transform.translation {
-            dyn_info.previous_position = transform.translation;
-        }
-    }
-}
-
-pub fn update_rigidbodies(
-    mut dyn_collision: Query<
-        (
-            &mut RigidbodyProperties,
-            &mut Transform,
-            &GlobalTransform,
-            &BasicCollider,
-        ),
-        With<DynamicCollision>,
-    >,
-    tile_data_query: Query<
-        (&GlobalTransform, &TileSlope, &TileFlags),
-        Without<RigidbodyProperties>,
-    >,
-    time: Res<Time>,
-) {
-    for (mut rigidbody, mut transform, gtransform, basic_collider) in &mut dyn_collision {
-        let tallest_entity = basic_collider
-            .currently_colliding
-            .iter()
-            .filter_map(|value| tile_data_query.get(*value).ok())
-            .max_by(|item, item2| item.0.translation().y.total_cmp(&item2.0.translation().y));
-
-        if let Some((gtransform2, slope, flags)) = tallest_entity {
-            transform.translation.y = gtransform2.translation().y
-                + slope.get_height_at_point(
-                    flags,
-                    gtransform.translation().xz() - gtransform2.translation().xz(),
-                );
-
-            rigidbody.velocity.y = 0.0;
-        } else {
-            rigidbody.velocity.y -= 2.0 * time.delta_secs();
-        }
-        transform.translation += rigidbody.velocity * time.delta_secs();
     }
 }
