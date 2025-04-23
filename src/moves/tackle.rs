@@ -37,12 +37,12 @@ impl MoveComponent for Tackle {
 }
 
 fn tackle(
-    active_moves: Query<(&Tackle, &Parent)>,
+    active_moves: Query<(&Tackle, &ChildOf)>,
     mut parent: Query<(&mut Transform, &AnimationHandler, &FacingDirection)>,
     time: Res<Time>,
 ) {
     for (tackle, entity) in active_moves.iter() {
-        let (mut transform, anim, dir) = parent.get_mut(**entity).unwrap();
+        let (mut transform, anim, dir) = parent.get_mut(entity.parent()).unwrap();
 
         match anim.frame() / anim.speed() {
             0.0..2.0 => {

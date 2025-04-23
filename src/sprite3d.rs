@@ -2,9 +2,9 @@
 //! see original version at https://github.com/FraserLee/bevy_sprite3d
 //! thanks FraserLee for sparing me the trouble of getting it going
 
+use bevy::platform::collections::hash_map::HashMap;
 use bevy::prelude::*;
 use bevy::render::{mesh::*, render_asset::RenderAssetUsages, render_resource::*};
-use bevy::utils::HashMap;
 use std::hash::Hash;
 
 pub struct Sprite3dPlugin;
@@ -29,7 +29,6 @@ pub struct Sprite3dParams<'w, 's> {
     pub images: ResMut<'w, Assets<Image>>,
     pub atlas_layouts: ResMut<'w, Assets<TextureAtlasLayout>>,
     pub caches: ResMut<'w, Sprite3dCaches>,
-    #[system_param(ignore)]
     marker: PhantomData<&'s usize>,
 }
 
@@ -154,33 +153,27 @@ fn quad(w: f32, h: f32, pivot: Option<Vec2>, double_sided: bool) -> Mesh {
 
     mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, vertices);
 
-    mesh.insert_attribute(
-        Mesh::ATTRIBUTE_NORMAL,
-        vec![
-            [0.0, 0.0, 1.0],
-            [0.0, 0.0, 1.0],
-            [0.0, 0.0, 1.0],
-            [0.0, 0.0, 1.0],
-            [0.0, 0.0, -1.0],
-            [0.0, 0.0, -1.0],
-            [0.0, 0.0, -1.0],
-            [0.0, 0.0, -1.0],
-        ],
-    );
+    mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, vec![
+        [0.0, 0.0, 1.0],
+        [0.0, 0.0, 1.0],
+        [0.0, 0.0, 1.0],
+        [0.0, 0.0, 1.0],
+        [0.0, 0.0, -1.0],
+        [0.0, 0.0, -1.0],
+        [0.0, 0.0, -1.0],
+        [0.0, 0.0, -1.0],
+    ]);
 
-    mesh.insert_attribute(
-        Mesh::ATTRIBUTE_UV_0,
-        vec![
-            [0.0, 1.0],
-            [1.0, 1.0],
-            [0.0, 0.0],
-            [1.0, 0.0],
-            [0.0, 1.0],
-            [1.0, 1.0],
-            [0.0, 0.0],
-            [1.0, 0.0],
-        ],
-    );
+    mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, vec![
+        [0.0, 1.0],
+        [1.0, 1.0],
+        [0.0, 0.0],
+        [1.0, 0.0],
+        [0.0, 1.0],
+        [1.0, 1.0],
+        [0.0, 0.0],
+        [1.0, 0.0],
+    ]);
 
     mesh.insert_indices(Indices::U32(if double_sided {
         vec![0, 1, 2, 1, 3, 2, 5, 4, 6, 7, 5, 6]
@@ -424,19 +417,16 @@ impl Sprite3dBuilder {
             // if we don't have a mesh in the cache, create it.
             if !params.caches.mesh_cache.contains_key(&mesh_key) {
                 let mut mesh = quad(w, h, Some(pivot), self.double_sided);
-                mesh.insert_attribute(
-                    Mesh::ATTRIBUTE_UV_0,
-                    vec![
-                        [frac_rect.min.x, frac_rect.max.y],
-                        [frac_rect.max.x, frac_rect.max.y],
-                        [frac_rect.min.x, frac_rect.min.y],
-                        [frac_rect.max.x, frac_rect.min.y],
-                        [frac_rect.min.x, frac_rect.max.y],
-                        [frac_rect.max.x, frac_rect.max.y],
-                        [frac_rect.min.x, frac_rect.min.y],
-                        [frac_rect.max.x, frac_rect.min.y],
-                    ],
-                );
+                mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, vec![
+                    [frac_rect.min.x, frac_rect.max.y],
+                    [frac_rect.max.x, frac_rect.max.y],
+                    [frac_rect.min.x, frac_rect.min.y],
+                    [frac_rect.max.x, frac_rect.min.y],
+                    [frac_rect.min.x, frac_rect.max.y],
+                    [frac_rect.max.x, frac_rect.max.y],
+                    [frac_rect.min.x, frac_rect.min.y],
+                    [frac_rect.max.x, frac_rect.min.y],
+                ]);
                 let mesh_h = params.meshes.add(mesh);
                 params.caches.mesh_cache.insert(mesh_key, mesh_h);
             }

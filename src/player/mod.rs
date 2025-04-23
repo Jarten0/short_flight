@@ -1,11 +1,14 @@
 use crate::animation::{AnimType, AnimationDirLabel};
 use crate::assets::AnimationAssets;
 use crate::assets::ShortFlightLoadingState;
+use crate::camera::{Mode3D, switch_projection};
+use crate::ldtk::TileQuery;
 use crate::npc::animation::AnimationHandler;
 use crate::npc::stats::{Damage, FacingDirection, Health};
 use crate::sprite3d::Sprite3dParams;
 use assets::ShayminAssets;
 use bevy::prelude::*;
+use bevy_ecs_tilemap::tiles::TileStorage;
 
 mod anim_state;
 pub mod assets;
@@ -39,7 +42,8 @@ impl Plugin for ShayminPlugin {
             )
             .add_systems(OnEnter(ShortFlightLoadingState::Done), insert_sprite)
             .add_systems(FixedUpdate, (controller::control_shaymin))
-            .add_systems(PostUpdate, (controller::draw_colliders).chain())
+            // .add_systems(PostUpdate, (controller::draw_colliders).chain())
+            .add_systems(Update, update_mode_3d.before(switch_projection))
             .add_systems(OnEnter(ShortFlightLoadingState::FailState), retry);
     }
 }
@@ -74,13 +78,11 @@ fn insert_sprite(
     mut commands: Commands,
     assets: Res<ShayminAssets>,
 ) {
-    let sprite = anim_state::sprite(&assets).bundle_with_atlas(
-        &mut sprite_3d_params,
-        TextureAtlas {
+    let sprite =
+        anim_state::sprite(&assets).bundle_with_atlas(&mut sprite_3d_params, TextureAtlas {
             layout: client.1.spritesheet.atlas.clone().unwrap(),
             index: 0,
-        },
-    );
+        });
     commands.entity(client.0).with_child((
         Name::new("3D Sprite"),
         sprite,
@@ -114,4 +116,19 @@ fn retry(mut commands: Commands, asset_server: Res<AssetServer>) {
         animations,
     });
     // commands.set_state(ShortFlightLoadingState::Done);
+}
+
+fn update_mode_3d(
+    shaymin: ClientQuery<&Transform>,
+    transform: Query<&Transform>,
+    mut mode: ResMut<Mode3D>,
+    mut tile_query: TileQuery,
+) {
+    match tile_query.get_tile(shaymin.translation) {
+        Some(entity) => {
+            let difference = shaymin.translation.y - transform.get(entity).unwrap().translation.y;
+            **mode = (difference / 100.).clamp(0., 1.);
+        }
+        None => (),
+    }
 }

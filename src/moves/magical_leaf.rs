@@ -2,8 +2,8 @@ use crate::animation::AnimType;
 
 use crate::npc::animation::AnimationHandler;
 use crate::npc::stats::{Damage, FacingDirection};
-use crate::projectile::interfaces::SpawnProjectile;
 use crate::projectile::Projectile;
+use crate::projectile::interfaces::SpawnProjectile;
 
 use super::prelude::*;
 #[derive(Component, Reflect)]
@@ -27,7 +27,7 @@ impl MoveComponent for MagicalLeaf {
         move_entity: Entity,
         move_data: &super::interfaces::MoveData,
     ) {
-        let parent = world.get::<Parent>(move_entity).unwrap().get();
+        let parent = world.get::<ChildOf>(move_entity).unwrap().parent();
         let position = world.get::<GlobalTransform>(parent).unwrap().translation();
         let direction = **world.get::<FacingDirection>(parent).unwrap();
         world.entity_mut(move_entity).insert((Self, Damage(20)));

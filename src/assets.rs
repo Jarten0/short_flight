@@ -1,12 +1,12 @@
+use crate::animation::{AnimType, AnimationData};
 use crate::moves::interfaces::MoveData;
 use crate::projectile::interfaces::ProjectileData;
 use crate::{ldtk, moves, npc, player, projectile};
 use bevy::asset::AssetLoader;
+use bevy::platform::collections::HashMap;
 use bevy::prelude::*;
-use bevy::utils::HashMap;
 use bevy_asset_loader::prelude::*;
 use serde::{Deserialize, Serialize};
-use crate::animation::{AnimType, AnimationData};
 use std::marker::PhantomData;
 use thiserror::Error;
 

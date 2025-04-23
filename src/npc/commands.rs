@@ -1,5 +1,5 @@
 use super::animation::AnimationHandler;
-use super::{animation, file::NPCAlmanac, file::NPCData, NPCInfo, NPC};
+use super::{NPC, NPCInfo, animation, file::NPCAlmanac, file::NPCData};
 use crate::collision::{
     self, BasicCollider, ColliderShape, CollisionLayers, DynamicCollision, ZHitbox,
 };
@@ -63,7 +63,8 @@ impl Command for SpawnNPC {
             NPCActions::Offensive {
                 focus: world
                     .query_filtered::<Entity, With<Shaymin>>()
-                    .single(&world),
+                    .single(&world)
+                    .unwrap(),
             },
             NPCDesicion::default(),
             FacingDirection::default(),

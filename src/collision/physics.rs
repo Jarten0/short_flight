@@ -51,7 +51,7 @@ pub fn update_rigidbodies(
 
             rigidbody.velocity.y = 0.0;
         } else {
-            rigidbody.velocity.y -= 2.0 * time.delta_secs();
+            // rigidbody.velocity.y -= 2.0 * time.delta_secs();
         }
         transform.translation += rigidbody.velocity * time.delta_secs();
     }

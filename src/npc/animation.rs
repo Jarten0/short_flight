@@ -5,7 +5,7 @@ use crate::moves::interfaces::MoveInfo;
 use crate::player::{ClientQuery, ClientChild, Shaymin};
 use bevy::math::Affine2;
 use bevy::prelude::*;
-use bevy::utils::HashMap;
+use bevy::platform::collections::HashMap;
 use bevy_inspector_egui::egui::epaint::text::layout;
 use crate::animation::{AnimType, AnimationData, AnimationDirLabel};
 use crate::sprite3d::Sprite3d;
@@ -143,8 +143,8 @@ pub(super) fn update_sprite_timer(
     for (mut anim, children) in &mut npcs {
         if anim.update(delta.delta_secs()) {
             for child in children.iter() {
-                if move_query.get(*child).is_ok() {
-                    commands.entity(*child).despawn();
+                if move_query.get(child).is_ok() {
+                    commands.entity(child).despawn();
                 }
             }
         }

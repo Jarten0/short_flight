@@ -175,7 +175,8 @@ fn spawn_massive_tilemap_mesh(
         let y = image_height.div_floor(tile_height);
 
         let base_image = image::DynamicImage::ImageRgba8(
-            ImageBuffer::from_raw(image_width, image_height, tileset_texture.data).unwrap(),
+            ImageBuffer::from_raw(image_width, image_height, tileset_texture.data.unwrap())
+                .unwrap(),
         );
 
         for y in 0..y {
@@ -230,11 +231,11 @@ fn spawn_massive_tilemap_mesh(
                 .observe(update_material_on::<Pointer<Over>>(
                     tilemap_mesh_data_ref.hovering.clone(),
                 ))
-                .observe(update_material_on::<Pointer<Out>>(bundle.1 .0.clone()))
-                .observe(update_material_on::<Pointer<Down>>(
+                .observe(update_material_on::<Pointer<Out>>(bundle.1.0.clone()))
+                .observe(update_material_on::<Pointer<Pressed>>(
                     tilemap_mesh_data_ref.selected.clone(),
                 ))
-                .observe(update_material_on::<Pointer<Up>>(
+                .observe(update_material_on::<Pointer<Released>>(
                     tilemap_mesh_data_ref.hovering.clone(),
                 ))
                 .observe(move_on_drag)
@@ -279,7 +280,9 @@ fn update_individual_tile_mesh(
         let Some(mesh_info) =
             create_mesh_from_tile_data(event.tile, &tile_data_query, &tilemap_query)
         else {
-            log::error!("Could not create updated mesh from current tile data! (Wrong entity being queried?)");
+            log::error!(
+                "Could not create updated mesh from current tile data! (Wrong entity being queried?)"
+            );
             continue;
         };
 
@@ -417,7 +420,7 @@ fn update_material_on<E>(
     // versions of this observer, each triggered by a different event and with a different hardcoded
     // material. Instead, the event type is a generic, and the material is passed in.
     move |trigger, mut query| {
-        if let Ok(mut material) = query.get_mut(trigger.entity()) {
+        if let Ok(mut material) = query.get_mut(trigger.target()) {
             material.0 = new_material.clone();
         }
     }
@@ -433,14 +436,14 @@ fn move_on_drag(
         return;
     }
     if kb.pressed(KeyCode::ShiftLeft) {
-        let (_, mut slope) = transforms.get_mut(drag.entity()).unwrap();
+        let (_, mut slope) = transforms.get_mut(drag.target()).unwrap();
 
         slope.0.y -= drag.delta.y * 0.01;
 
         return;
     }
     picking.set(TilePickedMode::Move { tile: drag.target });
-    let (mut transform, _) = transforms.get_mut(drag.entity()).unwrap();
+    let (mut transform, _) = transforms.get_mut(drag.target()).unwrap();
 
     transform.translation.y -= drag.delta.y * 0.01;
 }
@@ -456,13 +459,13 @@ fn adjust_on_release(
         return;
     }
     picking.set(TilePickedMode::Idle);
-    let (mut depth, transform) = transforms.get_mut(drag.entity()).unwrap();
+    let (mut depth, transform) = transforms.get_mut(drag.target()).unwrap();
     *depth = TileDepth::from(transform.translation.y.round());
-    tile_change_writer.send(TileChanged { tile: drag.target });
+    tile_change_writer.write(TileChanged { tile: drag.target });
 }
 
 fn adjust_on_up(
-    drag: Trigger<Pointer<Up>>,
+    drag: Trigger<Pointer<Released>>,
     mut transforms: Query<(&mut TileDepth, &Transform)>,
     mut tile_change_writer: EventWriter<TileChanged>,
     mut picking: ResMut<TilePickedMode>,
@@ -472,13 +475,13 @@ fn adjust_on_up(
         return;
     }
     picking.set(TilePickedMode::Idle);
-    let (mut depth, transform) = transforms.get_mut(drag.entity()).unwrap();
+    let (mut depth, transform) = transforms.get_mut(drag.target()).unwrap();
     *depth = TileDepth::from(transform.translation.y.round());
-    tile_change_writer.send(TileChanged { tile: drag.target });
+    tile_change_writer.write(TileChanged { tile: drag.target });
 }
 
 fn select_tile_for_modifying(
-    drag: Trigger<Pointer<Down>>,
+    drag: Trigger<Pointer<Pressed>>,
     mut picking: ResMut<TilePickedMode>,
     kb: Res<ButtonInput<KeyCode>>,
     tile_data: Query<(&TilePos, &TileDepth, &TileSlope, &TileFlags)>,
@@ -541,12 +544,14 @@ fn adjust_tiles_via_keystrokes(
             log::info!("Stopped painting");
         } else if painting.is_some() && kb.pressed(KeyCode::Space) {
             log::info!("Painted {} {:?}", selected, painting);
-            let [s, mut p] = tile_data.many_mut([*selected, painting.unwrap()]);
+            let Ok([s, mut p]) = tile_data.get_many_mut([*selected, painting.unwrap()]) else {
+                panic!("Could not get tile data for painting");
+            };
             *p.0 = s.0.clone();
             *p.1 = s.1.clone();
             *p.2 = s.2.clone();
 
-            tile_change_writer.send(TileChanged {
+            tile_change_writer.write(TileChanged {
                 tile: painting.unwrap(),
             });
 
@@ -573,19 +578,19 @@ fn adjust_tiles_via_keystrokes(
 
     if kb.just_pressed(KeyCode::KeyA) {
         slope.0.x -= 0.25;
-        tile_change_writer.send(TileChanged { tile });
+        tile_change_writer.write(TileChanged { tile });
         log::info!("Changed slope -x");
     } else if kb.just_pressed(KeyCode::KeyD) {
         slope.0.x += 0.25;
-        tile_change_writer.send(TileChanged { tile });
+        tile_change_writer.write(TileChanged { tile });
         log::info!("Changed slope +x");
     } else if kb.just_pressed(KeyCode::KeyW) {
         slope.0.z += 0.25;
-        tile_change_writer.send(TileChanged { tile });
+        tile_change_writer.write(TileChanged { tile });
         log::info!("Changed slope +y");
     } else if kb.just_pressed(KeyCode::KeyS) {
         slope.0.z -= 0.25;
-        tile_change_writer.send(TileChanged { tile });
+        tile_change_writer.write(TileChanged { tile });
         log::info!("Changed slope -y");
     } else if kb.just_pressed(KeyCode::KeyQ) {
         *picking = TilePickedMode::Paint {
@@ -612,7 +617,7 @@ fn adjust_tiles_via_keystrokes(
                 *rotate_mode ^= flag;
                 let flag_val = if rotate_mode.contains(flag) { "+" } else { "-" };
                 log::info!("Changed flag {}{}", flag_val, flag);
-                tile_change_writer.send(TileChanged { tile });
+                tile_change_writer.write(TileChanged { tile });
             }
         }
     }
@@ -664,7 +669,7 @@ fn save_tile_data(
 fn call_save_event(kb: Res<ButtonInput<KeyCode>>, mut saves: EventWriter<GoSaveTheMesh>) {
     if kb.just_pressed(KeyCode::KeyI) {
         log::info!("Saving tile depth map...");
-        saves.send(GoSaveTheMesh);
+        saves.write(GoSaveTheMesh);
     }
 }
 

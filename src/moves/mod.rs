@@ -45,15 +45,15 @@ fn register_component(input: Move) -> Box<dyn MoveComponent> {
 }
 
 pub mod interfaces {
+    use super::Move;
     use super::prelude::*;
     use super::register_component;
-    use super::Move;
     use crate::animation::AnimType;
     use crate::assets::AnimationSpritesheet;
     use crate::collision::ColliderShape;
     use crate::npc::animation::AnimationHandler;
     use crate::npc::stats::Damage;
-    use bevy::utils::hashbrown::HashMap;
+    use bevy::platform::collections::HashMap;
     use bevy_asset_loader::asset_collection::AssetCollection;
     use bevy_asset_loader::mapped::MapKey;
     use serde::{Deserialize, Serialize};
@@ -93,7 +93,7 @@ pub mod interfaces {
         where
             Self: Sized,
         {
-            world.get::<Parent>(move_entity).unwrap().get()
+            world.get::<ChildOf>(move_entity).unwrap().parent()
         }
     }
 
@@ -179,7 +179,7 @@ pub mod interfaces {
             );
             // world.entity_mut(self.parent).with_child(bundle).id();
 
-            let entity = world.spawn(bundle).set_parent(self.parent).id();
+            let entity = world.spawn(bundle).insert(ChildOf(self.parent)).id();
 
             world.resource_scope(|world, mut move_interfaces: Mut<MoveInterfaces>| {
                 let Some(interface) = move_interfaces.get_mut(&self.move_id) else {

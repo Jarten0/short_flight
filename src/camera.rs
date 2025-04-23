@@ -1,6 +1,42 @@
 use bevy::prelude::*;
-use bevy::render::camera::CameraProjection;
+use bevy::render::camera::{CameraProjection, CustomProjection};
 
+use crate::player::{Client, ClientQuery, Shaymin};
+
+static ORTHOGRAPHIC_PROJECTION: OrthographicProjection = OrthographicProjection {
+    scale: 1.0,
+    near: 0.1,
+    far: 1000.0,
+    viewport_origin: Vec2::new(0.5, 0.5),
+    scaling_mode: bevy::render::camera::ScalingMode::AutoMax {
+        max_width: 16.,
+        max_height: 9.,
+    },
+    area: {
+        let x0 = -1.0;
+        let y0 = -1.0;
+        {
+            let p0 = Vec2::new(x0, y0);
+            let p1 = Vec2::new(1.0, 1.0);
+            Rect {
+                min: Vec2 {
+                    x: p0.x.min(p1.x),
+                    y: p0.y.min(p1.y),
+                },
+                max: Vec2 {
+                    x: p0.x.max(p1.x),
+                    y: p0.y.max(p1.y),
+                },
+            }
+        }
+    },
+};
+static PERSPECTIVE_PROJECTION: PerspectiveProjection = PerspectiveProjection {
+    fov: core::f32::consts::PI / 4.0,
+    near: 0.1,
+    far: 1000.0,
+    aspect_ratio: 16.0 / 9.0,
+};
 pub struct CustomCameraPlugin;
 
 #[derive(Debug, Deref, DerefMut, Default, Resource)]
@@ -8,8 +44,9 @@ pub struct Mode3D(f32);
 
 impl Plugin for CustomCameraPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(PreStartup, setup)
-            .add_systems(Update, switch_projection);
+        app.init_resource::<Mode3D>()
+            .add_systems(PreStartup, setup)
+            .add_systems(Update, (switch_projection, follow_player));
     }
 }
 
@@ -33,41 +70,34 @@ pub(crate) fn setup(mut commands: Commands) {
             .looking_at(Vec3::NEG_Y, Vec3::Y)
             .with_rotation(Quat::from_rotation_x(f32::to_radians(-90.0)))
             .with_translation(Vec3::new(0.0, 20.0, 0.0)),
-        // Projection::custom(),
     ));
 }
 
-pub(crate) fn switch_projection(
-    mut projection: Single<&mut Projection>,
-    mode: Res<Mode3D>,
-    kb: Res<ButtonInput<KeyCode>>,
-) {
+pub(crate) fn switch_projection(mut projection: Single<&mut Projection>, mode: Res<Mode3D>) {
     **projection = match **mode {
-        0.0 => Projection::Orthographic(OrthographicProjection {
-            scale: 1.0,
-            near: 0.1,
-            far: 1000.0,
-            viewport_origin: Vec2::new(0.5, 0.5),
-            scaling_mode: bevy::render::camera::ScalingMode::AutoMax {
-                max_width: 16.,
-                max_height: 9.,
-            },
-            area: Rect::new(-1.0, -1.0, 1.0, 1.0),
+        0.0 => Projection::Orthographic(ORTHOGRAPHIC_PROJECTION.clone()),
+        x if (0.0..1.0).contains(&x) => Projection::custom(OrthographicPerspectiveLerpProjection {
+            base_perspective: PerspectiveProjection::default(),
+            base_orthographic: ORTHOGRAPHIC_PROJECTION.clone(),
+            t: x,
         }),
-        0.0..1.0 => {
-            todo!()
-        }
-        1.0 => Projection::Perspective(PerspectiveProjection {
-            fov: core::f32::consts::PI / 4.0,
-            near: 0.1,
-            far: 1000.0,
-            aspect_ratio: 16.0 / 9.0,
-        }),
+        1.0 => Projection::Perspective(PERSPECTIVE_PROJECTION.clone()),
         mode => panic!("Invalid Mode3D value! [{}]", mode),
     }
 }
 
-#[derive(Debug, Component)]
+pub(crate) fn follow_player(
+    camera: Option<Single<&mut Transform, (With<Camera3d>, Without<Shaymin>)>>,
+    transform: Option<ClientQuery<&Transform>>,
+) {
+    if let Some(transform) = transform {
+        let mut cam_transform = camera.unwrap().into_inner();
+        cam_transform.translation = transform.translation.with_y(transform.translation.y + 10.);
+        // cam_transform.translation = Vec3::new(10., 10., 2.);
+    };
+}
+
+#[derive(Debug, Component, Clone)]
 pub struct OrthographicPerspectiveLerpProjection {
     base_perspective: PerspectiveProjection,
     base_orthographic: OrthographicProjection,

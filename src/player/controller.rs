@@ -1,12 +1,12 @@
 use super::{Client, ClientQuery};
-use crate::animation::{self, cardinal, AnimType};
+use crate::animation::{self, AnimType, cardinal};
 use crate::collision::physics::RigidbodyProperties;
 use crate::collision::{
     self, BasicCollider, ColliderShape, CollisionEnterEvent, CollisionExitEvent, CollisionLayers,
     DynamicCollision, StaticCollision, ZHitbox,
 };
-use crate::moves::interfaces::SpawnMove;
 use crate::moves::Move;
+use crate::moves::interfaces::SpawnMove;
 use crate::npc::animation::AnimationHandler;
 use crate::npc::stats::FacingDirection;
 use crate::tile::{TileFlags, TileSlope};
@@ -63,15 +63,12 @@ pub fn control_shaymin(
         ),
         Without<Camera3d>,
     >,
-    camera: Option<Single<&mut Transform, With<Camera3d>>>,
     kb: Res<ButtonInput<KeyCode>>,
     time: Res<Time>,
     mut commands: Commands,
     mut gizmos: Gizmos,
 ) {
     let (transform, mut rigidbody, anim, mut facing) = shaymin.into_inner();
-
-    let mut cam_transform = camera.unwrap().into_inner();
 
     let Some(mut anim) = anim else {
         return;
@@ -96,7 +93,7 @@ pub fn control_shaymin(
             rigidbody.velocity = rigidbody
                 .velocity
                 .xz()
-                .move_towards(input.xz() * 1.5, movement)
+                .move_towards(input.xz() * 1.5 * 10., movement)
                 .xxy()
                 .with_y(rigidbody.velocity.y);
             if input.length_squared() > 0.0 {
@@ -151,8 +148,6 @@ pub fn control_shaymin(
         transform.translation + Vec3::from((***facing, 1.0)).xzy(),
         palettes::basic::RED,
     );
-
-    cam_transform.translation = transform.translation.with_y(transform.translation.y + 10.);
 }
 
 pub fn get_input(kb: Res<ButtonInput<KeyCode>>) -> Vec3 {

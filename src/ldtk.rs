@@ -5,8 +5,8 @@ use crate::npc::NPC;
 use crate::tile::{TileDepth, TileFlags, TileSlope};
 use bevy::color::palettes;
 use bevy::ecs::system::SystemState;
+use bevy::platform::collections::HashMap;
 use bevy::prelude::Asset;
-use bevy::utils::HashMap;
 use bevy::{asset::io::Reader, reflect::TypePath};
 use bevy::{
     asset::{AssetLoader, AssetPath, LoadContext},
@@ -15,9 +15,9 @@ use bevy::{
 use bevy_asset_loader::asset_collection::AssetCollection;
 use bevy_ecs_tilemap::map::TilemapType;
 use bevy_ecs_tilemap::{
+    TilemapBundle,
     map::{TilemapId, TilemapSize, TilemapTexture, TilemapTileSize},
     tiles::{TilePos, TileStorage, TileTextureIndex},
-    TilemapBundle,
 };
 use bevy_picking::pointer::PointerInteraction;
 use serde::{Deserialize, Serialize};
@@ -25,6 +25,12 @@ use short_flight::deserialize_file;
 use std::io::ErrorKind;
 use std::path::PathBuf;
 use thiserror::Error;
+
+mod query;
+mod tilemap_manager;
+
+pub use query::TileQuery;
+pub use tilemap_manager::TilemapManager;
 
 const TILEMAP_PATH: &str = "assets/map_data/";
 
@@ -64,6 +70,7 @@ impl Plugin for LdtkPlugin {
                 (
                     process_loaded_tile_maps.run_if(on_event::<AssetEvent<LdtkMap>>),
                     draw_mesh_intersections,
+                    query::label_chunks,
                 ),
             )
             .add_systems(OnEnter(ShortFlightLoadingState::Done), deferred_mesh_spawn);
@@ -242,7 +249,7 @@ pub fn process_loaded_tile_maps(
         query
             .iter()
             // only deal with currently changed map
-            .find(|map_query| map_query.1 .0.id() == changed_map)
+            .find(|map_query| map_query.1.0.id() == changed_map)
             .map(|bundle| (changed_map, bundle))
     });
 
@@ -250,7 +257,7 @@ pub fn process_loaded_tile_maps(
 
     for (changed_map, (entity, map_handle, map_config)) in changed_maps {
         // Despawn all existing tilemaps for this LdtkMap
-        commands.entity(entity).despawn_descendants();
+        commands.entity(entity).despawn_related::<Children>();
 
         spawn_map(&mut commands, &maps, map_handle, map_config);
     }
@@ -269,10 +276,19 @@ fn spawn_map(
         return;
     };
 
-    spawn_map_components(commands, ldtk_map, map_config);
+    let mut tilemap_manager = tilemap_manager::TilemapManager::from_project(&ldtk_map.project);
+
+    spawn_map_components(commands, ldtk_map, map_config, &mut tilemap_manager);
+
+    commands.insert_resource(tilemap_manager);
 }
 
-fn spawn_map_components(commands: &mut Commands, ldtk_map: &LdtkMap, map_config: &LdtkMapConfig) {
+fn spawn_map_components(
+    commands: &mut Commands,
+    ldtk_map: &LdtkMap,
+    map_config: &LdtkMapConfig,
+    tilemap_manager: &mut tilemap_manager::TilemapManager,
+) {
     // Pull out tilesets and their definitions into a new hashmap
     let mut tilesets = HashMap::new();
     ldtk_map.project.defs.tilesets.iter().for_each(|tileset| {
@@ -299,7 +315,7 @@ fn spawn_map_components(commands: &mut Commands, ldtk_map: &LdtkMap, map_config:
         .project
         .levels
         .iter()
-        .filter_map(|value| value.layer_instances.as_ref());
+        .filter_map(|level| level.layer_instances.as_ref());
 
     // We will create a tilemap for each layer in the following loop
     for (layer_id, layer) in level_layer_instances.flatten().rev().enumerate() {
@@ -331,17 +347,18 @@ fn spawn_map_components(commands: &mut Commands, ldtk_map: &LdtkMap, map_config:
 
         let root = PathBuf::from(TILEMAP_PATH.to_owned() + &level.identifier);
 
-        let mut tile_depth_map = get::<TileDepth>(&root, ".depth.ron");
-        let mut tile_slope_map = get::<TileSlope>(&root, ".slope.ron");
-        let mut tile_flag_map = get::<TileFlags>(&root, ".flag.ron");
+        let mut tile_depth_map = get::<TileDepth>(&root, "depth.ron");
+        let mut tile_slope_map = get::<TileSlope>(&root, "slope.ron");
+        let mut tile_flags_map = get::<TileFlags>(&root, "flags.ron");
 
         let metadata_path = LevelMetadataPath::from(root);
 
-        let tilemap_transform = Transform::from_xyz(
+        let tilemap_position = Vec2::new(
             level.world_x as f32 / size.x as f32,
-            0.0,
             level.world_y as f32 / size.y as f32,
         );
+
+        let tilemap_transform = Transform::from_translation(tilemap_position.xxy().with_y(0.0));
 
         // Instantiate layer entities here
         for entity in layer.entity_instances.iter() {
@@ -419,7 +436,7 @@ fn spawn_map_components(commands: &mut Commands, ldtk_map: &LdtkMap, map_config:
 
             let tile_slope = tile_slope_map.remove(&key).unwrap_or_default();
 
-            let tile_flags = tile_flag_map.remove(&key).unwrap_or(
+            let tile_flags = tile_flags_map.remove(&key).unwrap_or(
                 TileFlags::default() | TileFlags::from_bits(tile.f as u32).unwrap_or_default(),
             );
 
@@ -457,19 +474,22 @@ fn spawn_map_components(commands: &mut Commands, ldtk_map: &LdtkMap, map_config:
             .add_children(&children)
             .insert((
                 TilemapBundle {
-                    grid_size: tile_size.into(),
-                    map_type: TilemapType::default(),
                     size,
                     storage,
-                    texture: TilemapTexture::Single(texture),
                     tile_size,
+                    grid_size: tile_size.into(),
+                    map_type: TilemapType::default(),
+                    texture: TilemapTexture::Single(texture),
                     transform: tilemap_transform,
+                    anchor: bevy_ecs_tilemap::anchor::TilemapAnchor::default(),
                     ..default()
                 },
                 metadata_path,
                 Name::new(format!("Tilemap #{}", layer_id)),
             ))
             .id();
+
+        tilemap_manager.insert(level, tilemap, commands);
 
         commands.send_event(SpawnMeshEvent { tilemap });
     }

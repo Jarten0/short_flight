@@ -1,16 +1,16 @@
+use super::NPC;
+use super::NPCInfo;
 use super::stats::Damage;
 use super::stats::Health;
-use super::NPCInfo;
-use super::NPC;
 use crate::assets::AnimationSpritesheet;
-use crate::moves::interfaces::Moves;
+use crate::collision::{BasicCollider, ColliderShape};
 use crate::moves::Move;
+use crate::moves::interfaces::Moves;
+use bevy::platform::collections::HashMap;
 use bevy::prelude::*;
-use bevy::utils::HashMap;
 use bevy_asset_loader::asset_collection::AssetCollection;
 use serde::Deserialize;
 use serde::Serialize;
-use crate::collision::{BasicCollider, ColliderShape};
 
 #[derive(Resource, AssetCollection)]
 pub(crate) struct NPCAlmanac {

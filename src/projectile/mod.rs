@@ -41,7 +41,7 @@ impl MapKey for Projectile {
 }
 
 pub mod interfaces {
-    use super::{register_interface, Projectile};
+    use super::{Projectile, register_interface};
     use crate::assets::AnimationSpritesheet;
     use crate::collision::{
         BasicCollider, ColliderShape, CollisionLayers, DynamicCollision, ZHitbox,
@@ -50,9 +50,8 @@ pub mod interfaces {
     use crate::npc::stats::{Damage, FacingDirection};
     use crate::sprite3d::{Sprite3dBuilder, Sprite3dParams};
     use bevy::ecs::system::SystemState;
+    use bevy::platform::collections::HashMap;
     use bevy::prelude::*;
-    use bevy::text::cosmic_text::ttf_parser::name;
-    use bevy::utils::hashbrown::HashMap;
     use bevy_asset_loader::asset_collection::AssetCollection;
     use serde::{Deserialize, Serialize};
 
@@ -192,13 +191,10 @@ pub mod interfaces {
                 double_sided: true,
                 emissive: LinearRgba::BLACK,
             }
-            .bundle_with_atlas(
-                &mut system_state.get_mut(world),
-                TextureAtlas {
-                    layout: data.spritesheet.atlas.clone().unwrap(),
-                    index: 0,
-                },
-            );
+            .bundle_with_atlas(&mut system_state.get_mut(world), TextureAtlas {
+                layout: data.spritesheet.atlas.clone().unwrap(),
+                index: 0,
+            });
 
             world.entity_mut(id).insert(sprite_3d_bundle);
 

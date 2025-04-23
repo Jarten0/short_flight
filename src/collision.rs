@@ -1,6 +1,6 @@
 use bevy::color::palettes;
+use bevy::platform::collections::{HashMap, HashSet};
 use bevy::prelude::*;
-use bevy::utils::hashbrown::{HashMap, HashSet};
 use bitflags::bitflags;
 use serde::{Deserialize, Serialize};
 
@@ -21,12 +21,12 @@ impl Plugin for CollisionPlugin {
                     physics::update_rigidbodies,
                     // run GlobalTransform synchronization here since query_overlaps needs
                     (
-                        bevy::transform::systems::propagate_transforms,
+                        bevy::transform::systems::propagate_parent_transforms,
                         bevy::transform::systems::sync_simple_transforms,
                     ),
                     query_overlaps, // this uses the latest GlobalTransform, but doesn't change any Transform's
                     // (
-                    //     bevy::transform::systems::propagate_transforms,
+                    //     bevy::transform::systems::propagate_parent_transforms,
                     //     bevy::transform::systems::sync_simple_transforms,
                     // ),
                     process_collisions_and_send_events,
@@ -418,19 +418,22 @@ struct DeferColliderUpdate {
 }
 
 impl EntityCommand for DeferColliderUpdate {
-    fn apply(self, entity: Entity, world: &mut World) {
-        if self.enter {
-            world
-                .get_mut::<BasicCollider>(entity)
-                .unwrap()
-                .currently_colliding
-                .insert(self.other);
-        } else {
-            world
-                .get_mut::<BasicCollider>(entity)
-                .unwrap()
-                .currently_colliding
-                .remove(&self.other);
-        }
+    fn apply(self, mut entity: EntityWorldMut) -> () {
+        let id = entity.id();
+        entity.world_scope(|world| {
+            if self.enter {
+                world
+                    .get_mut::<BasicCollider>(id)
+                    .unwrap()
+                    .currently_colliding
+                    .insert(self.other);
+            } else {
+                world
+                    .get_mut::<BasicCollider>(id)
+                    .unwrap()
+                    .currently_colliding
+                    .remove(&self.other);
+            }
+        });
     }
 }
