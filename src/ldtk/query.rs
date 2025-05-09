@@ -80,7 +80,7 @@ pub fn label_chunks(tile_query: TileQuery, client: ClientQuery<&Transform>, mut 
     };
 
     gizmos.cross(
-        Isometry3d::from_translation(client.translation.with_y(1.)),
+        Isometry3d::from_translation(client.translation),
         0.25,
         palettes::basic::LIME,
     );

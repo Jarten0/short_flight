@@ -5,6 +5,7 @@ use bevy_asset_loader::loading_state::{LoadingState, LoadingStateAppExt};
 use bevy_asset_loader::mapped::MapKey;
 use enum_iterator::Sequence;
 use serde::{Deserialize, Serialize};
+use stats::OnDead;
 
 use crate::assets::{RonAssetLoader, ShortFlightLoadingState};
 use crate::moves::Move;
@@ -19,7 +20,11 @@ pub struct NPCPlugin;
 
 impl Plugin for NPCPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(Update, stats::query_dead)
+        app
+            //
+            .add_event::<OnDead>()
+            .add_systems(FixedLast, stats::query_dead)
+            .add_systems(Update, stats::remove_dead)
             .add_systems(
                 OnExit(ShortFlightLoadingState::LoadNPCAssets),
                 file::validate_npc_data,

@@ -69,7 +69,7 @@ impl TileSlope {
         let y2 = Self::get_y_position_from_point_on_triangle(
             Vec3 {
                 x: 1.,
-                y: corners[1],
+                y: corners[0],
                 z: 1.,
             },
             Vec3 {

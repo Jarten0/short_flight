@@ -360,12 +360,53 @@
 					"entityInstances": [
 						{
 							"__identifier": "NPC",
+							"__grid": [20,29],
+							"__pivot": [0,0],
+							"__tags": ["NPC"],
+							"__tile": { "tilesetUid": 25, "x": 0, "y": 0, "w": 32, "h": 32 },
+							"__smartColor": "#2CE8F5",
+							"iid": "a538cff0-e920-11ef-9d19-f920220a8253",
+							"width": 32,
+							"height": 32,
+							"defUid": 19,
+							"px": [640,928],
+							"fieldInstances": [
+								{ "__identifier": "NPC_ID", "__type": "Int", "__value": 1, "__tile": null, "defUid": 22, "realEditorValues": [{ "id": "V_Int", "params": [1] }] },
+								{ "__identifier": "Name", "__type": "String", "__value": "Geodude", "__tile": null, "defUid": 23, "realEditorValues": [{
+									"id": "V_String",
+									"params": ["Geodude"]
+								}] }
+							],
+							"__worldX": 640,
+							"__worldY": -96
+						},
+						{
+							"__identifier": "NPC",
 							"__grid": [22,15],
 							"__pivot": [0,0],
 							"__tags": ["NPC"],
 							"__tile": { "tilesetUid": 25, "x": 0, "y": 0, "w": 32, "h": 32 },
 							"__smartColor": "#2CE8F5",
-							"iid": "76bf0c30-1030-11f0-ab16-9d286409f9aa",
+							"iid": "e8a4e710-1030-11f0-ab16-1d745b62476c",
+							"width": 32,
+							"height": 32,
+							"defUid": 19,
+							"px": [704,480],
+							"fieldInstances": [
+								{ "__identifier": "NPC_ID", "__type": "Int", "__value": 0, "__tile": null, "defUid": 22, "realEditorValues": [] },
+								{ "__identifier": "Name", "__type": "String", "__value": null, "__tile": null, "defUid": 23, "realEditorValues": [] }
+							],
+							"__worldX": 704,
+							"__worldY": -544
+						},
+						{
+							"__identifier": "NPC",
+							"__grid": [22,15],
+							"__pivot": [0,0],
+							"__tags": ["NPC"],
+							"__tile": { "tilesetUid": 25, "x": 0, "y": 0, "w": 32, "h": 32 },
+							"__smartColor": "#2CE8F5",
+							"iid": "ec1ecb90-1030-11f0-ab16-4157ba5b425a",
 							"width": 32,
 							"height": 32,
 							"defUid": 19,
@@ -375,6 +416,28 @@
 								{ "__identifier": "Name", "__type": "String", "__value": "Geodude", "__tile": null, "defUid": 23, "realEditorValues": [{
 									"id": "V_String",
 									"params": ["Geodude"]
+								}] }
+							],
+							"__worldX": 704,
+							"__worldY": -544
+						},
+						{
+							"__identifier": "NPC",
+							"__grid": [22,15],
+							"__pivot": [0,0],
+							"__tags": ["NPC"],
+							"__tile": { "tilesetUid": 25, "x": 0, "y": 0, "w": 32, "h": 32 },
+							"__smartColor": "#2CE8F5",
+							"iid": "4e493aa0-1030-11f0-ab16-5b2101eb3416",
+							"width": 32,
+							"height": 32,
+							"defUid": 19,
+							"px": [704,480],
+							"fieldInstances": [
+								{ "__identifier": "NPC_ID", "__type": "Int", "__value": 1, "__tile": null, "defUid": 22, "realEditorValues": [{ "id": "V_Int", "params": [1] }] },
+								{ "__identifier": "Name", "__type": "String", "__value": "Geodude2", "__tile": null, "defUid": 23, "realEditorValues": [{
+									"id": "V_String",
+									"params": ["Geodude2"]
 								}] }
 							],
 							"__worldX": 704,

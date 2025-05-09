@@ -17,7 +17,7 @@ pub fn setup(shaymin: Client, mut commands: Commands) {
     commands.entity(*shaymin).insert((
         BasicCollider::new(
             true,
-            ColliderShape::Circle(20. / 32. / 2.),
+            ColliderShape::Circle(01. / 32. / 2.),
             CollisionLayers::NPC,
             CollisionLayers::NPC | CollisionLayers::Projectile | CollisionLayers::Wall,
         ),
@@ -93,7 +93,7 @@ pub fn control_shaymin(
             rigidbody.velocity = rigidbody
                 .velocity
                 .xz()
-                .move_towards(input.xz() * 1.5 * 10., movement)
+                .move_towards(input.xz() * 1.5, movement)
                 .xxy()
                 .with_y(rigidbody.velocity.y);
             if input.length_squared() > 0.0 {
@@ -153,7 +153,7 @@ pub fn control_shaymin(
 pub fn get_input(kb: Res<ButtonInput<KeyCode>>) -> Vec3 {
     let mut dir: Vec3 = Vec3::ZERO;
 
-    if kb.pressed(KeyCode::ShiftLeft) || kb.pressed(KeyCode::Space) {
+    if kb.pressed(KeyCode::ShiftLeft) {
         return dir;
     }
 

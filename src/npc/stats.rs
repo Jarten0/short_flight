@@ -24,7 +24,7 @@ impl Default for FacingDirection {
 #[derive(Debug, Default, Component, Reflect, Serialize, Deserialize, Clone)]
 #[require(NPC)]
 pub struct Health {
-    pub hp: u64,
+    pub hp: i64,
     /// can be set to true, but can never be set to false beyond initialization.
     /// thus code can always be certain that if they set it to be true,
     /// that they dont have to double check afterwards.
@@ -35,7 +35,7 @@ pub struct Health {
 }
 
 impl Health {
-    pub fn new(hp: u64) -> Self {
+    pub fn new(hp: i64) -> Self {
         Self {
             hp,
             do_not_despawn_on_faint: false,
@@ -45,7 +45,7 @@ impl Health {
 }
 
 impl std::ops::Deref for Health {
-    type Target = u64;
+    type Target = i64;
 
     fn deref(&self) -> &Self::Target {
         &self.hp
@@ -60,15 +60,25 @@ pub struct OnDead {
     entity: Entity,
 }
 
+#[derive(Debug, Component)]
+pub struct Dead;
+
 pub(crate) fn query_dead(mut commands: Commands, mut query: Query<(Entity, &mut Health)>) {
     for (entity, health) in &mut query {
         if health.hp <= 0 {
             commands.send_event(OnDead { entity });
+            commands.entity(entity).insert(Dead);
         }
+    }
+}
+
+pub(crate) fn remove_dead(mut commands: Commands, query: Query<Entity, With<Dead>>) {
+    for entity in query {
+        commands.entity(entity).despawn();
     }
 }
 
 /// Multiplies with the power of the attack to increase the damage dealt.
 #[derive(Debug, Component, Reflect, Serialize, Deserialize, Clone, Default, Deref)]
 #[require(NPC)]
-pub struct Damage(pub u64);
+pub struct Damage(pub i64);

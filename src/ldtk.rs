@@ -5,6 +5,7 @@ use crate::npc::NPC;
 use crate::tile::{TileDepth, TileFlags, TileSlope};
 use bevy::color::palettes;
 use bevy::ecs::system::SystemState;
+use bevy::picking::pointer::PointerInteraction;
 use bevy::platform::collections::HashMap;
 use bevy::prelude::Asset;
 use bevy::{asset::io::Reader, reflect::TypePath};
@@ -19,7 +20,6 @@ use bevy_ecs_tilemap::{
     map::{TilemapId, TilemapSize, TilemapTexture, TilemapTileSize},
     tiles::{TilePos, TileStorage, TileTextureIndex},
 };
-use bevy_picking::pointer::PointerInteraction;
 use serde::{Deserialize, Serialize};
 use short_flight::deserialize_file;
 use std::io::ErrorKind;

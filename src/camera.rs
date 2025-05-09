@@ -1,7 +1,10 @@
-use bevy::prelude::*;
-use bevy::render::camera::{CameraProjection, CustomProjection};
-
 use crate::player::{Client, ClientQuery, Shaymin};
+use bevy::prelude::*;
+use bevy::render::camera::CameraProjection;
+
+const OVERRIDE_PERSPECTIVE: Option<f32> = Some(1.0);
+const OVERRIDE_ORIENTATION: Option<f32> = Some(-20.0_f32.to_radians());
+const OVERRIDE_POSITION_OFFSET: Option<Vec3> = Some(Vec3::new(0.0, 1.0, 3.0));
 
 static ORTHOGRAPHIC_PROJECTION: OrthographicProjection = OrthographicProjection {
     scale: 1.0,
@@ -68,13 +71,24 @@ pub(crate) fn setup(mut commands: Commands) {
         Camera3d::default(),
         Transform::default()
             .looking_at(Vec3::NEG_Y, Vec3::Y)
-            .with_rotation(Quat::from_rotation_x(f32::to_radians(-90.0)))
-            .with_translation(Vec3::new(0.0, 20.0, 0.0)),
+            .with_rotation(match OVERRIDE_ORIENTATION {
+                Some(some) => Quat::from_rotation_x(some),
+                None => Quat::from_rotation_x(f32::to_radians(-90.0)),
+            })
+            .with_translation(match OVERRIDE_POSITION_OFFSET {
+                Some(some) => some,
+                None => Vec3::new(0.0, 20.0, 0.0),
+            }),
     ));
 }
 
 pub(crate) fn switch_projection(mut projection: Single<&mut Projection>, mode: Res<Mode3D>) {
-    **projection = match **mode {
+    let mode3d = match OVERRIDE_PERSPECTIVE {
+        Some(some) => some,
+        None => **mode,
+    };
+
+    **projection = match mode3d {
         0.0 => Projection::Orthographic(ORTHOGRAPHIC_PROJECTION.clone()),
         x if (0.0..1.0).contains(&x) => Projection::custom(OrthographicPerspectiveLerpProjection {
             base_perspective: PerspectiveProjection::default(),
@@ -92,8 +106,11 @@ pub(crate) fn follow_player(
 ) {
     if let Some(transform) = transform {
         let mut cam_transform = camera.unwrap().into_inner();
-        cam_transform.translation = transform.translation.with_y(transform.translation.y + 10.);
-        // cam_transform.translation = Vec3::new(10., 10., 2.);
+        cam_transform.translation = transform.translation
+            + match OVERRIDE_POSITION_OFFSET {
+                Some(some) => some,
+                None => Vec3::new(0.0, 20.0, 0.0),
+            };
     };
 }
 

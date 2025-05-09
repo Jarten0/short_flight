@@ -431,6 +431,7 @@ fn move_on_drag(
     mut transforms: Query<(&mut Transform, &mut TileSlope)>,
     mut picking: ResMut<TilePickedMode>,
     kb: Res<ButtonInput<KeyCode>>,
+    mut gizmos: Gizmos,
 ) {
     if drag.button != PointerButton::Primary {
         return;
@@ -484,12 +485,16 @@ fn select_tile_for_modifying(
     drag: Trigger<Pointer<Pressed>>,
     mut picking: ResMut<TilePickedMode>,
     kb: Res<ButtonInput<KeyCode>>,
-    tile_data: Query<(&TilePos, &TileDepth, &TileSlope, &TileFlags)>,
+    tile_data: Query<(
+        &GlobalTransform,
+        &TilePos,
+        &TileDepth,
+        &TileSlope,
+        &TileFlags,
+    )>,
+    mut gizmos: Gizmos,
 ) {
     if drag.button != PointerButton::Primary {
-        return;
-    }
-    if !kb.pressed(KeyCode::ShiftLeft) {
         return;
     }
 
@@ -500,7 +505,11 @@ fn select_tile_for_modifying(
 
     *picking = TilePickedMode::Move { tile };
 
-    let (pos, depth, slope, flags) = tile_data.get(tile).unwrap();
+    let (transform, pos, depth, slope, flags) = tile_data.get(tile).unwrap();
+
+    if !kb.pressed(KeyCode::ShiftLeft) {
+        return;
+    }
 
     log::info!(
         "Selected! target: [{:?}] depth: [{}] slope [{}] flags: [{}]",
@@ -532,7 +541,12 @@ fn select_tile_for_painting(
 }
 
 fn adjust_tiles_via_keystrokes(
-    mut tile_data: Query<(&mut TileDepth, &mut TileSlope, &mut TileFlags, &Transform)>,
+    mut tile_data: Query<(
+        &mut TileDepth,
+        &mut TileSlope,
+        &mut TileFlags,
+        &GlobalTransform,
+    )>,
     mut tile_change_writer: EventWriter<TileChanged>,
     kb: Res<ButtonInput<KeyCode>>,
     mut picking: ResMut<TilePickedMode>,
@@ -559,22 +573,39 @@ fn adjust_tiles_via_keystrokes(
         }
     };
 
+    gizmos.grid(
+        Isometry3d::new(
+            Vec3::new(0., 1., 0.),
+            // transform.translation().y.round(),
+            // transform.translation().z,
+            Quat::IDENTITY, // Quat::from_rotation_x(f32::to_radians(-90.)),
+        ),
+        UVec2::new(400, 400),
+        Vec2::ZERO,
+        palettes::basic::OLIVE,
+    );
     let TilePickedMode::Move { tile } = *picking else {
         return;
     };
-
     let (depth, mut slope, mut rotate_mode, transform) = tile_data.get_mut(tile).unwrap();
 
-    gizmos.grid_3d(
-        Vec3::new(
-            transform.translation.x,
-            transform.translation.y.round(),
-            transform.translation.z,
-        ),
-        UVec3::new(40, 1, 40),
-        Vec3::ONE,
-        palettes::basic::RED,
-    );
+    if !kb.pressed(KeyCode::ShiftLeft) {
+        gizmos.grid(
+            Isometry3d::new(
+                Vec3::new(
+                    transform.translation().x,
+                    1.,
+                    0., // transform.translation().y.round(),
+                        // transform.translation().z,
+                ),
+                Quat::IDENTITY, // Quat::from_rotation_x(f32::to_radians(-90.)),
+            ),
+            UVec2::new(4, 4),
+            Vec2::ZERO,
+            palettes::basic::OLIVE,
+        );
+        return;
+    }
 
     if kb.just_pressed(KeyCode::KeyA) {
         slope.0.x -= 0.25;
@@ -632,13 +663,13 @@ fn save_tile_data(
     tilemaps: Query<(&TileStorage, &LevelMetadataPath)>,
     tiles: Query<(&TilePos, &TileDepth, &TileSlope, &TileFlags)>,
 ) {
-    let mut depths = 0;
-    let mut slopes = 0;
+    let mut depth = 0;
+    let mut slope = 0;
     let mut flags = 0;
     for (tilemap, root) in tilemaps.iter() {
         let mut depth_info: HashMap<[u32; 2], &TileDepth> = HashMap::new();
         let mut slope_info: HashMap<[u32; 2], &TileSlope> = HashMap::new();
-        let mut flag_info: HashMap<[u32; 2], &TileFlags> = HashMap::new();
+        let mut flags_info: HashMap<[u32; 2], &TileFlags> = HashMap::new();
         tilemap
             .iter()
             .filter_map(|item| item.map(|item| tiles.get(item).ok()).unwrap_or_default())
@@ -650,18 +681,18 @@ fn save_tile_data(
                     slope_info.insert([pos.x, pos.y], slope);
                 }
                 if !flags.is_empty() {
-                    flag_info.insert([pos.x, pos.y], flags);
+                    flags_info.insert([pos.x, pos.y], flags);
                 }
             });
 
-        depths += serialize_to_file(depth_info, root.with_extension(".depth.ron")) as usize;
-        slopes += serialize_to_file(slope_info, root.with_extension(".slope.ron")) as usize;
-        flags += serialize_to_file(flag_info, root.with_extension(".flags.ron")) as usize;
+        depth += serialize_to_file(depth_info, root.with_extension("depth.ron")) as usize;
+        slope += serialize_to_file(slope_info, root.with_extension("slope.ron")) as usize;
+        flags += serialize_to_file(flags_info, root.with_extension("flags.ron")) as usize;
     }
     log::info!(
         "Saved {} depth maps, {} slope maps, and {} flag maps.",
-        depths,
-        slopes,
+        depth,
+        slope,
         flags
     );
 }
@@ -692,6 +723,16 @@ fn calculate_mesh_data(
         new
     };
     let mut insert = |data: (Vec<([f32; 3], [f32; 2])>, Vec<u32>)| {
+        assert_eq!(
+            data.0.len() as u32,
+            data.1
+                .clone()
+                .into_iter()
+                .max()
+                .map(|index| index + 1)
+                .unwrap_or(0)
+        );
+        assert_eq!(data.1.len() % 3, 0);
         vertices.append(&mut { data.0 });
         indices.append(&mut offset_indices(data.1));
     };
