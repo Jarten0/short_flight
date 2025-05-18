@@ -607,22 +607,23 @@ fn adjust_tiles_via_keystrokes(
         return;
     }
 
+    const ADJUSTMENT_AMOUNT: f32 = 1.0;
     if kb.just_pressed(KeyCode::KeyA) {
-        slope.0.x -= 0.25;
+        slope.0.x -= ADJUSTMENT_AMOUNT;
         tile_change_writer.write(TileChanged { tile });
         log::info!("Changed slope -x");
     } else if kb.just_pressed(KeyCode::KeyD) {
-        slope.0.x += 0.25;
+        slope.0.x += ADJUSTMENT_AMOUNT;
         tile_change_writer.write(TileChanged { tile });
         log::info!("Changed slope +x");
-    } else if kb.just_pressed(KeyCode::KeyW) {
-        slope.0.z += 0.25;
-        tile_change_writer.write(TileChanged { tile });
-        log::info!("Changed slope +y");
     } else if kb.just_pressed(KeyCode::KeyS) {
-        slope.0.z -= 0.25;
+        slope.0.z += ADJUSTMENT_AMOUNT;
         tile_change_writer.write(TileChanged { tile });
-        log::info!("Changed slope -y");
+        log::info!("Changed slope +z");
+    } else if kb.just_pressed(KeyCode::KeyW) {
+        slope.0.z -= ADJUSTMENT_AMOUNT;
+        tile_change_writer.write(TileChanged { tile });
+        log::info!("Changed slope -z");
     } else if kb.just_pressed(KeyCode::KeyQ) {
         *picking = TilePickedMode::Paint {
             selected: tile,
@@ -709,8 +710,8 @@ fn calculate_mesh_data(
     wall_counts: [u32; 4],
     flags: TileFlags,
 ) -> (Vec<([f32; 3], [f32; 2])>, Vec<u32>) {
-    let mut vertices = vec![];
-    let mut indices = vec![];
+    let mut vertices: Vec<([f32; 3], [f32; 2])> = vec![];
+    let mut indices: Vec<u32> = vec![];
 
     let mut index_offset = 0;
     let mut offset_indices = |indices: Vec<u32>| {
@@ -737,9 +738,10 @@ fn calculate_mesh_data(
         indices.append(&mut offset_indices(data.1));
     };
 
-    let corners = slope.get_slope_corner_depths(!flags.intersects(TileFlags::Exclusive));
+    // [tl, tr, br, bl]
+    let corners: [f32; 4] = slope.get_slope_corner_depths(!flags.intersects(TileFlags::Exclusive));
 
-    let top_vertices = top_vertices(corners, flags);
+    let top_vertices: (Vec<([f32; 3], [f32; 2])>, Vec<u32>) = top_vertices(corners, flags);
 
     for (side_index, side) in [[1, 0], [0, 3], [3, 2], [2, 1]].into_iter().enumerate() {
         let [v1, v2] = [top_vertices.0[side[0]].0, top_vertices.0[side[1]].0];
@@ -767,6 +769,9 @@ fn calculate_mesh_data(
 /// generates the vertex data for the top of the mesh, given:
 /// - the x and y position of the tile
 /// - the height of each corner of the top face
+///
+/// `corners` should be given in the order of
+/// [Top left, Top right, Bottom right, Bottom left]
 fn top_vertices(
     corners: [f32; 4],
     rotate_mode: TileFlags,
@@ -822,6 +827,7 @@ fn top_vertices(
 /// - the base depth of the tile
 /// - the two vertices that form the *top* line of the sloped wall
 fn slope_wall_data(v1: [f32; 3], v2: [f32; 3]) -> (Vec<([f32; 3], [f32; 2])>, Vec<u32>) {
+    // return Default::default();
     let depth = 0.0;
     let mut vertices: Vec<([f32; 3], [f32; 2])> = vec![];
     let mut indices: Vec<u32> = vec![];

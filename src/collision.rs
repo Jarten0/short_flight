@@ -1,8 +1,13 @@
+use std::marker::PhantomData;
+
 use bevy::color::palettes;
 use bevy::platform::collections::{HashMap, HashSet};
 use bevy::prelude::*;
 use bitflags::bitflags;
 use serde::{Deserialize, Serialize};
+
+use crate::ldtk::TileQuery;
+use crate::tile::{TileDepth, TileFlags, TileSlope};
 
 pub mod physics;
 
@@ -13,6 +18,8 @@ impl Plugin for CollisionPlugin {
         app.add_event::<CollisionEnterEvent>()
             .add_event::<CollisionExitEvent>()
             .init_resource::<CollisionTracker>()
+            .init_resource::<CollisionTracker<StaticCollision>>()
+            .init_resource::<CollisionTracker<TilemapCollision>>()
             .register_type::<BasicCollider>()
             .add_systems(FixedFirst, physics::update_dynamic_collision)
             .add_systems(
@@ -24,14 +31,25 @@ impl Plugin for CollisionPlugin {
                         bevy::transform::systems::propagate_parent_transforms,
                         bevy::transform::systems::sync_simple_transforms,
                     ),
-                    query_overlaps, // this uses the latest GlobalTransform, but doesn't change any Transform's
+                    // Parallel collision tracking done here
+                    (query_collider_overlaps, query_tile_overlaps), // these use the latest GlobalTransform, but doesn't change any Transform's
+                    // Synchronize parallelized collision trackers here
+                    |mut main_source: ResMut<CollisionTracker>,
+                     mut collider: ResMut<CollisionTracker<StaticCollision>>,
+                     mut tile: ResMut<CollisionTracker<TilemapCollision>>| {
+                        main_source.sync(&mut collider);
+                        main_source.sync(&mut tile);
+                    },
                     // (
                     //     bevy::transform::systems::propagate_parent_transforms,
                     //     bevy::transform::systems::sync_simple_transforms,
                     // ),
                     process_collisions_and_send_events,
                     propogate_collision_events, // this will be changing Transform's after GlobalTransform is used
-                    cleanup_collision_tracker,
+                    // Deferred functionality for removing any collision trackings for collision exits
+                    |mut collision_tracker: ResMut<CollisionTracker>| {
+                        collision_tracker.cleanup();
+                    },
                     // GlobalTransforms will be finally updated in PostUpdate
                 )
                     .chain(),
@@ -39,9 +57,72 @@ impl Plugin for CollisionPlugin {
     }
 }
 
-#[derive(Debug, Resource, Clone, Default, Serialize)]
-pub struct CollisionTracker {
-    pub current_collisions: HashMap<Entity, HashSet<(Entity, bool)>>,
+/// Parallelizable tracker for new collision events.
+///
+/// When a collision event for a particular entity occurs, it should be registered here.
+/// Use different generic types to instantiate multiple versions of CollisionTracker.
+///
+/// Later on, all collision trackers should be syncronized in
+#[derive(Debug, Resource, Clone, Serialize)]
+pub struct CollisionTracker<T = ()> {
+    /// Tracks events that need to be triggered for entities.
+    event_trackers: HashMap<Entity, CollisionEventTracker>,
+    /// Marker used so that multiple instantiations of CollisionTracker may be inserted into a single world
+    /// and thus may be used in parallel, synchronizing later into one main instance.
+    ///  
+    /// The unit type [ () ] is used to indicate that this CollisionTracker is the main source of information
+    marker: PhantomData<T>,
+}
+
+impl CollisionTracker {
+    /// Returns the list of event trackers
+    pub fn current_collisions(&self) -> &HashMap<Entity, CollisionEventTracker> {
+        &self.event_trackers
+    }
+
+    /// Resets registered event trackers.
+    pub fn cleanup(&mut self) {
+        for (_entity, event_tracker) in &mut self.event_trackers {
+            event_tracker.clear();
+        }
+    }
+
+    /// Appends event trackers to get one cohesive iterable list.
+    fn sync<T>(&mut self, other: &mut CollisionTracker<T>) {
+        self.event_trackers = self
+            .event_trackers
+            .clone()
+            .into_iter()
+            .chain(other.event_trackers.drain())
+            .collect();
+    }
+}
+
+impl<T> Default for CollisionTracker<T> {
+    fn default() -> Self {
+        Self {
+            event_trackers: Default::default(),
+            marker: Default::default(),
+        }
+    }
+}
+
+#[derive(Debug, Default, Clone, Serialize)]
+pub struct CollisionEventTracker(HashMap<Entity, bool>);
+
+impl CollisionEventTracker {
+    /// Registers a new event.
+    ///
+    /// Note: This should only be ran **once** per overlap/unoverlap, right when it happens.
+    /// If it was already registered, then do not call again until the overlap state changes again.
+    pub fn register_overlap(&mut self, entity: Entity, is_overlapping: bool) {
+        self.0.insert(entity, is_overlapping);
+    }
+
+    /// Clears the event list.
+    pub fn clear(&mut self) {
+        self.0.clear();
+    }
 }
 
 /// Information for objects that move
@@ -49,6 +130,10 @@ pub struct CollisionTracker {
 pub struct DynamicCollision {
     pub previous_position: Vec3,
 }
+
+/// Labeller for collision entities that should interact with tilemaps
+#[derive(Debug, Component)]
+pub struct TilemapCollision;
 
 /// Information for objects that cannot nor should ever move
 #[derive(Debug, Reflect, Component, Default)]
@@ -187,157 +272,309 @@ pub struct CollisionExitEvent {
     pub other: Entity,
 }
 
-pub fn query_overlaps(
-    dyn_objects: Query<(
-        Entity,
-        &GlobalTransform,
-        &BasicCollider,
-        &ZHitbox,
-        &DynamicCollision,
-    )>,
-    all_objects: Query<(
-        Entity,
-        &GlobalTransform,
-        &BasicCollider,
-        &ZHitbox,
-        AnyOf<(&DynamicCollision, &StaticCollision)>,
-    )>,
-    mut gizmos: Gizmos,
+/// For dynamic collider entities, finds all overlaps with other collider entities.
+pub fn query_collider_overlaps(
+    dyn_objects: Query<(Entity, &GlobalTransform, &BasicCollider), With<DynamicCollision>>,
+    all_objects: Query<
+        (Entity, &GlobalTransform, &BasicCollider),
+        Or<(With<DynamicCollision>, With<StaticCollision>)>,
+    >,
+    z_query: Query<(&ZHitbox, &GlobalTransform)>,
     mut collision_tracker: ResMut<CollisionTracker>,
 ) {
-    for (entity, transform, dyn_col, z_hitbox, dyn_info) in &dyn_objects {
-        let colliding: &mut HashSet<(Entity, bool)> =
-            match collision_tracker.current_collisions.get_mut(&entity) {
-                Some(some) => some,
-                None => {
-                    collision_tracker
-                        .current_collisions
-                        .insert(entity, HashSet::new());
-                    collision_tracker
-                        .current_collisions
-                        .get_mut(&entity)
-                        .unwrap()
-                }
-            };
+    for (entity, transform, dyn_col) in &dyn_objects {
+        let event_tracker = collision_tracker
+            .event_trackers
+            .entry(entity)
+            .or_insert(Default::default());
 
-        match &dyn_col.shape {
+        let entity2_query = all_objects
+            .iter()
+            .filter(|(entity2, _, _)| entity != *entity2)
+            .filter(|(_, _, col)| dyn_col.can_interact.intersects(col.layers.clone()));
+
+        let overlap_results: HashMap<Entity, bool> = match &dyn_col.shape {
             ColliderShape::Rect(col_rect) => {
                 let rect = offset_rect(col_rect, transform);
-                for (entity2, transform2, col, z_hitbox2, (dyn_info2, stat_info2)) in &all_objects {
-                    if entity == entity2 {
-                        continue;
-                    }
-
-                    if !dyn_col.can_interact.intersects(col.layers.clone()) {
-                        continue;
-                    }
-
-                    let mut result: bool = match &col.shape {
-                        ColliderShape::Rect(col_rect) => {
-                            let rect2 = offset_rect(col_rect, transform2);
-                            !rect.intersect(rect2).is_empty()
-                        }
-                        ColliderShape::Circle(radius) => {
-                            let p = transform2.translation().xz();
-
-                            let radius2 = bounded_difference(rect, p).length_squared();
-
-                            let distance_sq = rect.center().distance_squared(p);
-
-                            radius.powi(2) + radius2 > distance_sq
-                        }
-                        ColliderShape::Mesh(handle) => unimplemented!(),
-                    };
-
-                    result &= z_hitbox.intersecting(
-                        z_hitbox2,
-                        transform.translation().y,
-                        transform2.translation().y,
-                    );
-
-                    colliding.insert((entity2, result));
-                }
+                entity2_query
+                    .map(|(entity2, transform2, col)| {
+                        (entity2, get_rect_overlaps(rect, transform2, col))
+                    })
+                    .collect()
             }
             ColliderShape::Circle(radius) => {
                 let p = transform.translation().xz();
 
-                const DRAW_GIZMOS: bool = false;
-
-                for (entity2, transform2, col, z_hitbox2, (dyn_info2, stat_info2)) in &all_objects {
-                    if entity == entity2 {
-                        continue;
-                    }
-
-                    let mut result: bool = match &col.shape {
-                        ColliderShape::Rect(col_rect) => {
-                            let rect = offset_rect(col_rect, transform2);
-
-                            let radius2 = bounded_difference(rect, p).length();
-
-                            let combined_radius = radius + radius2;
-
-                            let distance = rect.center().distance(p);
-
-                            if DRAW_GIZMOS && combined_radius > distance - 0.5 {
-                                gizmos.circle(
-                                    Isometry3d::new(
-                                        Vec3::new(rect.center().x, 0.05, rect.center().y),
-                                        Quat::from_rotation_x(f32::to_radians(90.0)),
-                                    ),
-                                    radius2,
-                                    palettes::basic::RED,
-                                );
-                            }
-
-                            if combined_radius > distance {
-                                if DRAW_GIZMOS {
-                                    let end = Vec3::new(
-                                        rect.center().x,
-                                        1.0 + transform2.translation().y + z_hitbox2.y_tolerance,
-                                        rect.center().y,
-                                    );
-                                    gizmos.line(
-                                        Vec3::new(p.x, 0.1, p.y),
-                                        end,
-                                        palettes::basic::LIME,
-                                    );
-                                }
-
-                                true
-                            } else {
-                                false
-                            }
-                        }
-                        ColliderShape::Circle(radius2) => {
-                            let p2 = transform2.translation().xz();
-
-                            let distance_sq = p.distance_squared(p2);
-                            radius.powi(2) + radius2.powi(2) > distance_sq
-                        }
-                        ColliderShape::Mesh(handle) => unimplemented!(),
-                    };
-
-                    result &= z_hitbox.intersecting(
-                        z_hitbox2,
-                        transform.translation().y,
-                        transform2.translation().y,
-                    );
-
-                    colliding.insert((entity2, result));
-                }
+                entity2_query
+                    .map(|(entity2, transform2, col)| {
+                        (entity2, get_circle_overlaps(radius, p, transform2, col))
+                    })
+                    .collect()
             }
             ColliderShape::Mesh(handle) => unimplemented!(),
-        }
+        };
+
+        overlap_results
+            .into_iter()
+            .for_each(|(entity2, is_overlapping)| {
+                if dyn_col.currently_colliding.contains(&entity2) == is_overlapping {
+                    return;
+                }
+                event_tracker.register_overlap(
+                    entity2,
+                    is_overlapping && {
+                        let (z1, g1) = z_query.get(entity).unwrap_or((
+                            &ZHitbox {
+                                y_tolerance: 0.0,
+                                neg_y_tolerance: 0.0,
+                            },
+                            &GlobalTransform::IDENTITY,
+                        ));
+                        let (z2, g2) = z_query.get(entity2).unwrap_or((
+                            &ZHitbox {
+                                y_tolerance: 0.0,
+                                neg_y_tolerance: 0.0,
+                            },
+                            &GlobalTransform::IDENTITY,
+                        ));
+
+                        z1.intersecting(z2, g1.translation().y, g2.translation().y)
+                    },
+                )
+            })
     }
 }
 
+fn get_rect_overlaps(rect: Rect, transform2: &GlobalTransform, col: &BasicCollider) -> bool {
+    match &col.shape {
+        ColliderShape::Rect(col_rect) => {
+            let rect2 = offset_rect(col_rect, transform2);
+            !rect.intersect(rect2).is_empty()
+        }
+        ColliderShape::Circle(radius) => {
+            let p = transform2.translation().xz();
+
+            let radius2 = bounded_difference(rect, p).length_squared();
+
+            let distance_sq = rect.center().distance_squared(p);
+
+            radius.powi(2) + radius2 > distance_sq
+        }
+        ColliderShape::Mesh(handle) => unimplemented!(),
+    }
+}
+
+fn get_circle_overlaps(
+    radius: &f32,
+    p: Vec2,
+    transform2: &GlobalTransform,
+    col: &BasicCollider,
+) -> bool {
+    match &col.shape {
+        ColliderShape::Rect(col_rect) => {
+            let rect = offset_rect(col_rect, transform2);
+
+            let radius2 = bounded_difference(rect, p).length();
+
+            let combined_radius = radius + radius2;
+
+            let distance = rect.center().distance(p);
+
+            if combined_radius >= distance {
+                true
+            } else {
+                false
+            }
+        }
+        ColliderShape::Circle(radius2) => {
+            let p2 = transform2.translation().xz();
+
+            let distance_sq = p.distance_squared(p2);
+            radius.powi(2) + radius2.powi(2) > distance_sq
+        }
+        ColliderShape::Mesh(handle) => unimplemented!(),
+    }
+}
+
+/// For dynamic collider entities, finds all overlaps with colliding tiles.
+///
+/// Currently assumes all tiles go infinitely down.
+/// TODO: patch in tile minimum cap
+pub fn query_tile_overlaps(
+    entities: Query<(Entity, &GlobalTransform, &ZHitbox, &BasicCollider), With<TilemapCollision>>,
+    tile_query: TileQuery,
+    tile_data: Query<(Entity, &TileDepth, &TileSlope, &TileFlags)>,
+    mut gizmos: Gizmos,
+    mut collision_tracker: ResMut<CollisionTracker<TilemapCollision>>,
+) {
+    for (entity, gtransform, zhitbox, basic_collider) in entities {
+        let translation = gtransform.translation();
+        let position = translation.xz();
+        let mut overlapping_tiles: HashSet<Entity> = HashSet::new();
+
+        match &basic_collider.shape {
+            ColliderShape::Rect(rect) => {
+                let rect_tile_overlap = IRect {
+                    min: rect.min.floor().as_ivec2(),
+                    max: rect.max.ceil().as_ivec2(),
+                };
+
+                let rect_tile_iter = (rect_tile_overlap.min.x..rect_tile_overlap.max.x)
+                    .flat_map(|x| {
+                        (rect_tile_overlap.min.y..rect_tile_overlap.max.y).map(move |y| (x, y))
+                    })
+                    .map(|(x, y)| Vec2 {
+                        x: x as f32 + 0.5,
+                        y: y as f32 + 0.5,
+                    });
+
+                overlapping_tiles = rect_tile_iter
+                    .filter_map(|tile_pos| {
+                        tile_query.get_tile(Vec3 {
+                            x: tile_pos.x,
+                            y: 0.0,
+                            z: tile_pos.y,
+                        })
+                    })
+                    .collect();
+            }
+            ColliderShape::Circle(radius) => {
+                let tilemap_bounding_box = IRect {
+                    min: (position - Vec2::splat(*radius)).floor().as_ivec2(),
+                    max: (position + Vec2::splat(*radius)).ceil().as_ivec2(),
+                };
+
+                let bounding_box_tile_iter = (tilemap_bounding_box.min.x
+                    ..tilemap_bounding_box.max.x)
+                    .flat_map(|x| {
+                        (tilemap_bounding_box.min.y..tilemap_bounding_box.max.y)
+                            .map(move |y| (x, y))
+                    })
+                    .map(|(x, y)| Vec2 {
+                        x: x as f32 + 0.5,
+                        y: y as f32 + 0.5,
+                    });
+
+                for tile_pos in bounding_box_tile_iter.clone() {
+                    gizmos.rect(
+                        Isometry3d::new(
+                            tile_pos.xxy().with_y(3.5),
+                            Quat::from_rotation_x(f32::to_radians(90.)),
+                        ),
+                        Vec2::ONE,
+                        palettes::basic::MAROON,
+                    );
+
+                    let f = |tile_pos: &Vec2| {
+                        position.move_towards(*tile_pos, *radius + std::f32::consts::FRAC_1_SQRT_2)
+                    };
+
+                    let move_towards = f(&tile_pos);
+
+                    // if !(move_towards == tile_pos) {
+                    //     log::info!("{}", (move_towards - tile_pos).length())
+                    // }
+
+                    gizmos.line(
+                        Vec3 {
+                            x: tile_pos.x,
+                            y: 2.,
+                            z: tile_pos.y,
+                        },
+                        Vec3 {
+                            x: move_towards.x,
+                            y: 2.,
+                            z: move_towards.y,
+                        },
+                        palettes::basic::AQUA,
+                    );
+                }
+
+                overlapping_tiles = bounding_box_tile_iter
+                    .filter(|tile_pos| {
+                        let move_towards = position
+                            .move_towards(*tile_pos, *radius + std::f32::consts::FRAC_1_SQRT_2);
+                        return move_towards == *tile_pos;
+                    })
+                    .filter_map(|tile_pos| {
+                        tile_query.get_tile(Vec3 {
+                            x: tile_pos.x,
+                            y: 0.0,
+                            z: tile_pos.y,
+                        })
+                    })
+                    .collect();
+            }
+            ColliderShape::Mesh(vec2s) => todo!(),
+        }
+
+        let overlapping_tile_query = overlapping_tiles
+            .clone()
+            .into_iter()
+            .filter_map(|tile_entity| tile_data.get(tile_entity).ok());
+
+        let event_tracker = collision_tracker
+            .event_trackers
+            .entry(entity)
+            .or_insert(Default::default());
+
+        for (tile_entity, depth, slope, flags) in overlapping_tile_query {
+            if !zhitbox.intersecting(
+                &ZHitbox {
+                    y_tolerance: slope.xz().max_element(),
+                    neg_y_tolerance: f32::NEG_INFINITY,
+                },
+                translation.y,
+                depth.f32(),
+            ) {
+                continue;
+            };
+
+            if basic_collider.currently_colliding.contains(&tile_entity) {
+                continue;
+            }
+
+            event_tracker.register_overlap(tile_entity, true);
+        }
+
+        for tile_entity in &basic_collider.currently_colliding {
+            if !overlapping_tiles.contains(tile_entity) {
+                event_tracker.register_overlap(*tile_entity, false);
+                continue;
+            }
+
+            let Ok((tile_entity, depth, slope, flags)) =
+                tile_data.get(*tile_entity).inspect_err(|err| {
+                    log::error!(
+                        "Could not query tile data for tile {}! [{}]",
+                        tile_entity,
+                        err
+                    )
+                })
+            else {
+                continue;
+            };
+
+            if !zhitbox.intersecting(
+                &ZHitbox {
+                    y_tolerance: slope.xz().max_element(),
+                    neg_y_tolerance: f32::NEG_INFINITY,
+                },
+                translation.y,
+                depth.f32(),
+            ) {
+                event_tracker.register_overlap(tile_entity, false);
+            };
+        }
+    }
+}
 pub fn process_collisions_and_send_events(
     collision_tracker: Res<CollisionTracker>,
     mut commands: Commands,
 ) {
-    for (entity, colliding) in &collision_tracker.current_collisions {
+    for (entity, colliding) in collision_tracker.current_collisions() {
         let entity = *entity;
-        for (entity2, result) in colliding {
+        for (entity2, result) in &colliding.0 {
             let entity2 = *entity2;
             if *result {
                 commands
@@ -363,13 +600,6 @@ pub fn process_collisions_and_send_events(
                     });
             }
         }
-    }
-}
-
-/// Deferred functionality for removing any collision trackings for collision exits
-pub fn cleanup_collision_tracker(mut collision_tracker: ResMut<CollisionTracker>) {
-    for (_, colliding) in &mut collision_tracker.current_collisions {
-        colliding.clear();
     }
 }
 

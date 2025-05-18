@@ -445,20 +445,21 @@ fn spawn_map_components(
                 position,
                 TilemapId(map_entity),
                 TileTextureIndex(tile.t as u32),
-                BasicCollider::new(
-                    false,
-                    ColliderShape::Rect(Rect {
-                        min: Vec2 { x: 0., y: 0. },
-                        max: Vec2 { x: 1., y: 1. },
-                    }),
-                    CollisionLayers::Wall,
-                    CollisionLayers::all(),
-                ),
-                ZHitbox {
-                    y_tolerance: tile_slope.0.abs().max_element(),
-                    neg_y_tolerance: f32::NEG_INFINITY,
-                },
-                StaticCollision {},
+                // BasicCollider::new(
+                //     false,
+                //     ColliderShape::Rect(Rect {
+                //         min: Vec2 { x: 0., y: 0. },
+                //         max: Vec2 { x: 1., y: 1. },
+                //     }),
+                //     CollisionLayers::Wall,
+                //     CollisionLayers::all(),
+                // ),
+                // ZHitbox {
+                //     y_tolerance: tile_slope.0.abs().max_element(),
+                //     neg_y_tolerance: f32::NEG_INFINITY,
+                // },
+                // StaticCollision {},
+                Transform::from_translation(Vec3::ZERO),
                 tile_depth,
                 tile_slope,
                 tile_flags,

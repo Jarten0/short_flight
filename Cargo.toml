@@ -69,7 +69,7 @@ bevy = { version = "0.16.0", features = [
     "x11",
     "bevy_remote",
 ], default-features = false }
-bevy-inspector-egui = "0.30.0"
+bevy-inspector-egui = "0.31.0"
 bevy_asset_loader = { version = "0.23.0-rc.4", features = [
     "3d",
     "standard_dynamic_assets",

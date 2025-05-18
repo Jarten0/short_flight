@@ -1,3 +1,4 @@
+use super::TilemapCollision;
 use crate::collision::{BasicCollider, CollisionEnterEvent, CollisionLayers, DynamicCollision};
 use crate::ldtk::TileQuery;
 use crate::npc::stats::{Damage, Health};
@@ -55,7 +56,8 @@ pub fn update_rigidbodies(
 
             rigidbody.velocity.y = 0.0;
         } else {
-            rigidbody.velocity.y -= 2.0 * time.delta_secs();
+            const GRAVITY: f32 = 2.0;
+            rigidbody.velocity.y -= GRAVITY * time.delta_secs();
         }
         transform.translation += rigidbody.velocity * time.delta_secs();
     }

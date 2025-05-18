@@ -3,13 +3,14 @@ use crate::animation::{self, AnimType, cardinal};
 use crate::collision::physics::RigidbodyProperties;
 use crate::collision::{
     self, BasicCollider, ColliderShape, CollisionEnterEvent, CollisionExitEvent, CollisionLayers,
-    DynamicCollision, StaticCollision, ZHitbox,
+    DynamicCollision, StaticCollision, TilemapCollision, ZHitbox,
 };
+use crate::ldtk::TileQuery;
 use crate::moves::Move;
 use crate::moves::interfaces::SpawnMove;
 use crate::npc::animation::AnimationHandler;
 use crate::npc::stats::FacingDirection;
-use crate::tile::{TileFlags, TileSlope};
+use crate::tile::{TileDepth, TileFlags, TileSlope};
 use bevy::color::palettes;
 use bevy::prelude::*;
 
@@ -17,7 +18,7 @@ pub fn setup(shaymin: Client, mut commands: Commands) {
     commands.entity(*shaymin).insert((
         BasicCollider::new(
             true,
-            ColliderShape::Circle(01. / 32. / 2.),
+            ColliderShape::Circle(20. / 32. / 2.),
             CollisionLayers::NPC,
             CollisionLayers::NPC | CollisionLayers::Projectile | CollisionLayers::Wall,
         ),
@@ -30,6 +31,7 @@ pub fn setup(shaymin: Client, mut commands: Commands) {
             velocity: Vec3::default(),
         },
         DynamicCollision::default(),
+        TilemapCollision,
     ));
     commands
         .entity(*shaymin)
@@ -180,8 +182,31 @@ pub fn draw_colliders(
         &GlobalTransform,
         &ZHitbox,
     )>,
+    transform_query: Query<&GlobalTransform>,
+    shaymin: Client,
     mut gizmos: Gizmos,
 ) {
+    if let Ok((collider, (dyn_info, stat_info), transform, zhitbox)) =
+        rigidbodies.get(shaymin.entity())
+    {
+        for entity in &collider.currently_colliding {
+            gizmos
+                .sphere(
+                    Isometry3d::new(
+                        transform_query
+                            .get(*entity)
+                            .unwrap()
+                            .translation()
+                            .with_y(5.0),
+                        Quat::from_rotation_x(f32::to_radians(-90.0)),
+                    ),
+                    0.20,
+                    palettes::basic::NAVY,
+                )
+                .resolution(4);
+        }
+    }
+
     for (collider, (dyn_info, stat_info), transform, zhitbox) in &rigidbodies {
         let color = match (dyn_info, stat_info) {
             (Some(_), _) => palettes::basic::AQUA,
@@ -224,4 +249,18 @@ pub fn draw_colliders(
             );
         }
     }
+}
+
+pub fn draw_tile_collision(
+    mut gizmos: Gizmos,
+    tile_query: TileQuery,
+    tile_data: Query<(&Transform, &TileDepth, &TileSlope, &TileFlags)>,
+) {
+    let Some((transform, depth, slope, flags)) = tile_query
+        .get_tile(Vec3::ZERO)
+        .map(|tile| tile_data.get(tile).ok())
+        .unwrap_or(None)
+    else {
+        return;
+    };
 }

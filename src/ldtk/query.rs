@@ -1,6 +1,7 @@
 use std::marker::PhantomData;
 
 use bevy::color::palettes;
+use bevy::ecs::query::QueryData;
 use bevy::ecs::system::SystemParam;
 use bevy::prelude::*;
 use bevy_ecs_tilemap::anchor::TilemapAnchor;
@@ -25,7 +26,7 @@ pub fn get_tilemap_tilepos_from_world_position(
 #[derive(SystemParam)]
 pub struct TileQuery<'w, 's> {
     pub tilemap_manager: Option<Res<'w, TilemapManager>>,
-    pub query: Query<
+    pub tilemap_query: Query<
         'w,
         's,
         (
@@ -52,7 +53,7 @@ impl TileQuery<'_, '_> {
         let entity = manager.map_storage.get(&tile_pos)?;
 
         let (tilemap_transform, storage, size, grid_size, tile_size, tilemap_type, tilemap_anchor) =
-            self.query.get(entity).ok()?;
+            self.tilemap_query.get(entity).ok()?;
 
         let player_pos = world_pos.xz() - (Vec2::ONE / 2.);
         let vec2 = (player_pos - tilemap_transform.translation().xz()) * 32.;
@@ -73,7 +74,7 @@ impl TileQuery<'_, '_> {
 pub fn label_chunks(tile_query: TileQuery, client: ClientQuery<&Transform>, mut gizmos: Gizmos) {
     let TileQuery {
         tilemap_manager: Some(manager),
-        query,
+        tilemap_query: query,
     } = tile_query
     else {
         return;

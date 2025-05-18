@@ -40,48 +40,43 @@ impl From<i64> for TileDepth {
     }
 }
 
+/// Unique representation of how a tile should be sloped.
+///
+/// `x` and `z` determine how much a tile should be sloped on either axis.
+/// The higher the value, the higher that part of the slope will be.
+///
+/// `y` is used to determine the offset of the points from the initial depth of the tile.
+/// See: [`TileDepth`], which is used to determine the base height of a tile.
+///
+/// [`TileFlags`] is used in tandem with this in order to determine several specifics about the slope,
+/// notably [`TileFlags::Exclusive`], which needs some explaining, detailed below.
+///
+/// An inclusive tile - as according to my own definition - is a concave corner tile, or on the intersection of two walls.
+/// It is also any "straight" slope, or any slope not a part of a corner and instead just part of a wall.
+/// When a tile is in inclusive mode, its slope is calculated to have `x` and `z` add together when determining the height of the corner,
+/// thus "including" inputs when both are present to get the final height of a corner.
+///
+/// An exclusive tile is the opposite. This is used specifically for convex corner tiles which need some annoyingly specific calculations.
+/// When a tile is in exclusive mode, each corner is calculated
 #[derive(Debug, Reflect, Component, Default, Clone, Serialize, Deserialize, Deref)]
 #[serde(transparent)]
 pub struct TileSlope(pub Vec3);
 
 impl TileSlope {
     pub fn get_height_at_point(&self, tile_flags: &TileFlags, point: Vec2) -> f32 {
+        // [tl, tr, br, bl]
         let corners = self.get_slope_corner_depths(!tile_flags.intersects(TileFlags::Exclusive));
 
         let y = Self::get_y_position_from_point_on_triangle(
-            Vec3 {
-                x: 0.,
-                y: corners[0],
-                z: 1.,
-            },
-            Vec3 {
-                x: 1.,
-                y: corners[1],
-                z: 1.,
-            },
-            Vec3 {
-                x: 1.,
-                y: corners[2],
-                z: 0.,
-            },
+            Vec3::new(0., corners[0], 0.),
+            Vec3::new(1., corners[1], 0.),
+            Vec3::new(1., corners[2], 1.),
             point,
         );
         let y2 = Self::get_y_position_from_point_on_triangle(
-            Vec3 {
-                x: 1.,
-                y: corners[0],
-                z: 1.,
-            },
-            Vec3 {
-                x: 1.,
-                y: corners[2],
-                z: 0.,
-            },
-            Vec3 {
-                x: 0.,
-                y: corners[3],
-                z: 0.,
-            },
+            Vec3::new(0., corners[0], 0.),
+            Vec3::new(1., corners[2], 1.),
+            Vec3::new(0., corners[3], 1.),
             point,
         );
 
@@ -89,6 +84,12 @@ impl TileSlope {
         let max = f32::max(y, y2);
         max
     }
+
+    /// Gets the maximum height of the slope for collision detection.
+    /// Output is relative to base tile height.
+    // pub fn get_slope_height(&self, flags: &TileFlags) -> f32 {
+
+    // }
 
     /// For the given slope (`s`) value, returns the depth of the four corners of a tile
     /// that should become a slope.
@@ -104,23 +105,31 @@ impl TileSlope {
     /// 3. Bottom Left
     pub(crate) fn get_slope_corner_depths(&self, inclusive: bool) -> [f32; 4] {
         let i = inclusive as i32 as f32;
-        let pos: Box<dyn Fn(f32) -> f32> =
-            Box::new(|value: f32| f32::clamp(value, 0., f32::INFINITY));
-        let neg: Box<dyn Fn(f32) -> f32> =
-            Box::new(|value: f32| -f32::clamp(value, f32::NEG_INFINITY, 0.));
 
-        let points = [self.z; 4];
-        let mapping = [
-            (&neg, &pos), // tl
-            (&pos, &pos), // tr
-            (&pos, &neg), // br
-            (&neg, &neg), // bl
+        // unintuitive solution to
+        let positive_clamp = |value: f32| f32::clamp(value, 0., f32::INFINITY);
+        let negative_clamp = |value: f32| -f32::clamp(value, f32::NEG_INFINITY, 0.);
+
+        let points = [self.y; 4];
+        let use_negative_clamp = [
+            [true, true],   // tl
+            [false, true],  // tr
+            [false, false], // br
+            [true, false],  // bl
         ];
 
-        let select_corner =
-            |(point, map): (f32, (&Box<dyn Fn(f32) -> f32>, &Box<dyn Fn(f32) -> f32>))| {
-                let x_component = map.0(self.x);
-                let z_component = map.1(self.z);
+        let mut a = points.into_iter().zip(use_negative_clamp).map(
+            |(point, neg_clamp): (f32, [bool; 2])| {
+                let x_component = if neg_clamp[0] {
+                    negative_clamp(self.x)
+                } else {
+                    positive_clamp(self.x)
+                };
+                let z_component = if neg_clamp[1] {
+                    negative_clamp(self.z)
+                } else {
+                    positive_clamp(self.z)
+                };
 
                 let mut total = 0.;
 
@@ -133,9 +142,8 @@ impl TileSlope {
                 }
 
                 point + total.clamp(0., f32::INFINITY)
-            };
-
-        let mut a = points.into_iter().zip(mapping).map(select_corner);
+            },
+        );
 
         [
             a.next().unwrap(), // tl
@@ -174,28 +182,48 @@ impl TileSlope {
 
 /// Bitflags for how the tile should be visibly changed
 ///
-/// Rotation bitflags are assumed to be clockwise
-///
 /// Flags:
 /// * FlipX = 0b1;
 /// * FlipY = 0b1 << 1;
 /// * RotateClockwise = 0b1 << 2;
-/// * RotateCounterClockwise = 0b1 << 3;
+/// * RotateCounterClockwise = 0b1 << 3; **May become obsolete in the future**
 /// * FlipTriangles = 0b1 << 4;
 /// * Exclusive = 0b1 << 5;
 /// * Fold = 0b1 << 6;
+///
+/// See per-flag documentation for more details.
 #[derive(Debug, Reflect, Component, Default, Clone, Copy, Serialize, Deserialize, PartialEq)]
 #[serde(transparent)]
 pub struct TileFlags(u32);
 
 bitflags! {
     impl TileFlags: u32 {
+        /// Flip the texture of the tile across the x-axis.
         const FlipX = 0b1;
+        /// Flip the texture of the tile across the y-axis.
         const FlipY = 0b1 << 1;
+        /// Rotates the texture by 90 degrees clockwise.
+        ///
+        /// Applies after texture flips, not before.
+        ///
+        /// Combine `FlipX` and `FlipY` for a 180 degree rotation.
         const RotateClockwise = 0b1 << 2;
+        /// Rotates the texture by 90 degrees counterclockwise.
+        ///
+        /// **NOTE:** Might not be a necessary flag, may become obsolete/changed if another flag proves more useful.
+        ///
+        /// Applies after texture flips, not before.
+        ///
+        /// Combine `FlipX` and `FlipY` for a 180 degree rotation.
         const RotateCounterClockwise = 0b1 << 3;
+        /// Changes the vertex calculations so that the top tile face's triangles will use an alternative layout.
+        /// Effect is important for corner slopes, which change based on the orientation of the triangles.
         const FlipTriangles = 0b1 << 4;
+        /// Changes slope calculations to use an alternate method of calculating corners from the [`TileSlope`].0's [`Vec3`] values.
+        /// See [`TileSlope`] for more details.
         const Exclusive = 0b1 << 5;
+        /// Rotates one of the triangle's textures, which will allow for more consistent
+        /// corner slopes lining up with alternatively rotated sides.
         const Fold = 0b1 << 6;
         // const  = 0b1 << 7;
     }

@@ -3,6 +3,7 @@
 #![feature(path_add_extension)]
 
 use bevy::prelude::*;
+use bevy_inspector_egui::bevy_egui::EguiPlugin;
 
 pub(crate) mod animation;
 pub(crate) mod camera;
@@ -37,8 +38,11 @@ fn main() {
         .add_plugins(mesh::TileMeshManagerPlugin)
         .add_plugins(sprite3d::Sprite3dPlugin)
         // third party
-        .add_plugins(bevy_ecs_tilemap::TilemapPlugin)
+        .add_plugins(EguiPlugin {
+            enable_multipass_for_primary_context: true,
+        })
         // .add_plugins(bevy_inspector_egui::quick::WorldInspectorPlugin::default())
+        .add_plugins(bevy_ecs_tilemap::TilemapPlugin)
         // .add_plugins(bevy_editor_cam::DefaultEditorCamPlugins)
         .add_plugins(bevy::remote::RemotePlugin::default())
         .add_plugins(bevy::remote::http::RemoteHttpPlugin::default())

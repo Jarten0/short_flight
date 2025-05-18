@@ -42,7 +42,7 @@ impl Plugin for ShayminPlugin {
             )
             .add_systems(OnEnter(ShortFlightLoadingState::Done), insert_sprite)
             .add_systems(FixedUpdate, (controller::control_shaymin))
-            // .add_systems(PostUpdate, (controller::draw_colliders).chain())
+            .add_systems(PostUpdate, (controller::draw_colliders).chain())
             .add_systems(Update, update_mode_3d.before(switch_projection))
             .add_systems(OnEnter(ShortFlightLoadingState::FailState), retry);
     }
