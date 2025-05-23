@@ -137,6 +137,7 @@ pub mod interfaces {
         pub(crate) display_name: String,
         pub(crate) spritesheet: Option<AnimationSpritesheet>,
         pub(crate) collider: Option<ColliderShape>,
+        pub(crate) related_animaition: Option<AnimType>,
         #[serde(flatten)]
         #[reflect(ignore)]
         pub(crate) extra_info: HashMap<String, ron::Value>,
@@ -167,7 +168,7 @@ pub mod interfaces {
                 .unwrap()
                 .clone();
 
-            let bundle = (
+            let move_bundle = (
                 Name::new(move_data.display_name.clone()),
                 self.move_id,
                 MoveInfo {
@@ -175,18 +176,20 @@ pub mod interfaces {
                     data: handle.clone(),
                 },
                 Damage(2),
-                Transform::default(),
+                Transform::IDENTITY,
+                ChildOf(self.parent),
             );
-            // world.entity_mut(self.parent).with_child(bundle).id();
 
-            let entity = world.spawn(bundle).insert(ChildOf(self.parent)).id();
+            let move_entity = world.spawn(move_bundle).id();
+
+            log::info!("move:{}, parent:{}", move_entity, self.parent);
 
             world.resource_scope(|world, mut move_interfaces: Mut<MoveInterfaces>| {
-                let Some(interface) = move_interfaces.get_mut(&self.move_id) else {
+                let Some(interface) = move_interfaces.0.get_mut(&self.move_id) else {
                     log::error!("No interface found for {:?}", self.move_id);
                     return;
                 };
-                interface.on_spawn(world, entity, &move_data);
+                interface.on_spawn(world, move_entity, &move_data);
             });
         }
     }

@@ -63,33 +63,46 @@ impl From<i64> for TileDepth {
 pub struct TileSlope(pub Vec3);
 
 impl TileSlope {
+    /// Returns the height of the slope at any given point.
     pub fn get_height_at_point(&self, tile_flags: &TileFlags, point: Vec2) -> f32 {
         // [tl, tr, br, bl]
         let corners = self.get_slope_corner_depths(!tile_flags.intersects(TileFlags::Exclusive));
+
+        let triangle_1 = if !tile_flags.intersects(TileFlags::FlipTriangles) {
+            [0, 1, 2]
+        } else {
+            [1, 0, 3]
+        };
+        let triangle_2 = if !tile_flags.intersects(TileFlags::FlipTriangles) {
+            [0, 1, 2]
+        } else {
+            [1, 0, 3]
+        };
 
         let y = Self::get_y_position_from_point_on_triangle(
             Vec3::new(0., corners[0], 0.),
             Vec3::new(1., corners[1], 0.),
             Vec3::new(1., corners[2], 1.),
-            point,
+            point.clamp(Vec2::ZERO, Vec2::ONE),
         );
         let y2 = Self::get_y_position_from_point_on_triangle(
             Vec3::new(0., corners[0], 0.),
             Vec3::new(1., corners[2], 1.),
             Vec3::new(0., corners[3], 1.),
-            point,
+            point.clamp(Vec2::ZERO, Vec2::ONE),
         );
 
-        // log::info!("{:?}", (y, y2));
-        let max = f32::max(y, y2);
-        max
+        f32::max(y, y2)
     }
 
     /// Gets the maximum height of the slope for collision detection.
     /// Output is relative to base tile height.
-    // pub fn get_slope_height(&self, flags: &TileFlags) -> f32 {
-
-    // }
+    pub fn get_slope_height(&self, flags: &TileFlags) -> f32 {
+        self.get_slope_corner_depths(!flags.intersects(TileFlags::Exclusive))
+            .into_iter()
+            .reduce(f32::max)
+            .unwrap()
+    }
 
     /// For the given slope (`s`) value, returns the depth of the four corners of a tile
     /// that should become a slope.
@@ -104,53 +117,24 @@ impl TileSlope {
     /// 2. Bottom Right
     /// 3. Bottom Left
     pub(crate) fn get_slope_corner_depths(&self, inclusive: bool) -> [f32; 4] {
-        let i = inclusive as i32 as f32;
+        let pos_x = self.x;
+        let pos_z = self.z;
+        let neg_x = -self.x;
+        let neg_z = -self.z;
 
-        // unintuitive solution to
-        let positive_clamp = |value: f32| f32::clamp(value, 0., f32::INFINITY);
-        let negative_clamp = |value: f32| -f32::clamp(value, f32::NEG_INFINITY, 0.);
+        let east = pos_x.clamp(0.0, f32::INFINITY);
+        let west = neg_x.clamp(0.0, f32::INFINITY);
+        let south = pos_z.clamp(0.0, f32::INFINITY);
+        let north = neg_z.clamp(0.0, f32::INFINITY);
 
-        let points = [self.y; 4];
-        let use_negative_clamp = [
-            [true, true],   // tl
-            [false, true],  // tr
-            [false, false], // br
-            [true, false],  // bl
-        ];
+        let op = if inclusive { f32::max } else { f32::min };
 
-        let mut a = points.into_iter().zip(use_negative_clamp).map(
-            |(point, neg_clamp): (f32, [bool; 2])| {
-                let x_component = if neg_clamp[0] {
-                    negative_clamp(self.x)
-                } else {
-                    positive_clamp(self.x)
-                };
-                let z_component = if neg_clamp[1] {
-                    negative_clamp(self.z)
-                } else {
-                    positive_clamp(self.z)
-                };
+        let tl = op(north, west);
+        let tr = op(north, east);
+        let br = op(south, east);
+        let bl = op(south, west);
 
-                let mut total = 0.;
-
-                if x_component == 0. {
-                    total += z_component * i
-                } else if z_component == 0. {
-                    total += x_component * i
-                } else {
-                    total += (x_component + z_component) / 2.
-                }
-
-                point + total.clamp(0., f32::INFINITY)
-            },
-        );
-
-        [
-            a.next().unwrap(), // tl
-            a.next().unwrap(), // tr
-            a.next().unwrap(), // br
-            a.next().unwrap(), // bl
-        ]
+        [tl + self.y, tr + self.y, br + self.y, bl + self.y]
     }
 
     /// a, b, c : triangle

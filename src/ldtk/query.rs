@@ -71,7 +71,11 @@ impl TileQuery<'_, '_> {
     }
 }
 
-pub fn label_chunks(tile_query: TileQuery, client: ClientQuery<&Transform>, mut gizmos: Gizmos) {
+pub fn draw_chunk_labels(
+    tile_query: TileQuery,
+    client: ClientQuery<&Transform>,
+    mut gizmos: Gizmos,
+) {
     let TileQuery {
         tilemap_manager: Some(manager),
         tilemap_query: query,

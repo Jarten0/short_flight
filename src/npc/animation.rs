@@ -1,14 +1,15 @@
-use super::stats::FacingDirection;
 use super::NPC;
+use super::stats::FacingDirection;
+use crate::animation::{AnimType, AnimationData, AnimationDirLabel};
 use crate::assets::AnimationSpritesheet;
 use crate::moves::interfaces::MoveInfo;
-use crate::player::{ClientQuery, ClientChild, Shaymin};
-use bevy::math::Affine2;
-use bevy::prelude::*;
-use bevy::platform::collections::HashMap;
-use bevy_inspector_egui::egui::epaint::text::layout;
-use crate::animation::{AnimType, AnimationData, AnimationDirLabel};
+use crate::player::{ClientChild, ClientQuery, Shaymin};
 use crate::sprite3d::Sprite3d;
+use bevy::math::Affine2;
+use bevy::platform::collections::HashMap;
+use bevy::prelude::*;
+use bevy_inspector_egui::egui::epaint::text::layout;
+use thiserror::Error;
 
 /// Handles the state managment of the NPC
 #[derive(Debug, Component)]
@@ -26,8 +27,28 @@ pub(crate) struct AnimationHandler {
     pub looping: bool,
 }
 
+#[derive(Debug, Error)]
+pub(crate) enum AnimationError {
+    #[error("The animation data asset was not set for the animation handler.")]
+    AnimationDataAssetMissing,
+    #[error("The spritesheet asset was not set for the animation handler.")]
+    SpritesheetAssetMissing,
+    #[error("The spritesheet asset was not set for the animation handler.")]
+    SpritesheetMissing,
+    #[error("Animation list is empty.")]
+    NoAnimationsListed,
+    #[error("Animation not found in animation list.")]
+    AnimationNotIncluded(AnimType),
+    #[error("The listed animation has no corresponding animation data given.")]
+    ListedAnimationMissingData(AnimType),
+}
+
 impl AnimationHandler {
     pub fn new(spritesheet: AnimationSpritesheet) -> AnimationHandler {
+        debug_assert!(
+            spritesheet.data.0.contains_key(&AnimType::Idle),
+            "Idle animation not found! Fallback behaviour requires an idle animation"
+        );
         Self {
             current: AnimType::Idle,
             animations: spritesheet.data.0.clone(),
@@ -38,15 +59,14 @@ impl AnimationHandler {
         }
     }
 
-
     pub fn update(&mut self, delta: f32) -> bool {
         let Some(animation_data) = self.animations.get(&self.current) else {
             log::error!("Could not find animation data for {:?}", self.current);
-            self.frame += delta * self.speed;
+            self.start_animation(AnimType::Idle);
             return true;
         };
 
-        if animation_data.process_timer(&mut self.frame, delta * self.speed ) {
+        if animation_data.process_timer(&mut self.frame, delta * self.speed) {
             if !self.looping {
                 self.start_animation(AnimType::Idle);
             }
@@ -56,9 +76,12 @@ impl AnimationHandler {
         }
     }
 
-    pub fn get_current_atlas(&self, direction: &FacingDirection) -> Option<TextureAtlas> {
+    pub fn get_current_atlas(
+        &self,
+        direction: &FacingDirection,
+    ) -> Result<TextureAtlas, AnimationError> {
         let Some(handle) = self.spritesheet.atlas.as_ref() else {
-            return None;
+            return Err(AnimationError::SpritesheetAssetMissing);
         };
         let layout = handle.clone_weak();
 
@@ -66,10 +89,13 @@ impl AnimationHandler {
 
         let index = self.frame.floor() as usize + (index * self.spritesheet.max_frames as usize);
 
-        Some(TextureAtlas { layout, index })
+        Ok(TextureAtlas { layout, index })
     }
 
-    fn get_atlas_index(&self, direction: &FacingDirection) -> Option<(usize, BVec2)> {
+    fn get_atlas_index(
+        &self,
+        direction: &FacingDirection,
+    ) -> Result<(usize, BVec2), AnimationError> {
         let mut index = 0;
         for id in &self.spritesheet.animations {
             if self.current == *id {
@@ -80,15 +106,19 @@ impl AnimationHandler {
                 .directional_sprite_count() as usize;
 
             if Some(id) == self.spritesheet.animations.last() {
-                return None;
+                return Err(AnimationError::AnimationNotIncluded(self.current));
             }
+        }
+        if self.spritesheet.animations.len() == 0 {
+            return Err(AnimationError::NoAnimationsListed);
         }
         let (offset, flip) = self
             .animation_data()
+            .ok_or(AnimationError::ListedAnimationMissingData(self.current))?
             .direction_label
             .get_index_offset(direction);
         index += offset;
-        Some((index, flip))
+        Ok((index, flip))
     }
 
     pub fn frame(&self) -> f32 {
@@ -107,19 +137,8 @@ impl AnimationHandler {
         self.current
     }
 
-    pub fn animation_data(&self) -> &AnimationData {
-        self.spritesheet
-            .data
-            .0
-            .get(&self.current)
-            .unwrap_or_else(|| {
-                log::error!(
-                    "Could not find animation data for {:?} in {:#?}",
-                    self.current,
-                    self.animations
-                );
-                panic!("Failed to find animation data")
-            })
+    pub fn animation_data(&self) -> Option<&AnimationData> {
+        self.spritesheet.data.0.get(&self.current)
     }
 
     pub fn get_animation_data(&self) -> Option<&AnimationData> {
@@ -152,18 +171,34 @@ pub(super) fn update_sprite_timer(
 }
 
 pub(super) fn update_npc_sprites(
-    mut npcs: Query<(
-        &mut Sprite3d,
-        &MeshMaterial3d<StandardMaterial>,
-        AnyOf<((&AnimationHandler, &FacingDirection), &ClientChild)>,
-    )>,
-    client: ClientQuery<Option<(&AnimationHandler, &FacingDirection)>>,
+    mut npcs: Query<
+        (
+            Entity,
+            &mut Sprite3d,
+            &MeshMaterial3d<StandardMaterial>,
+            &AnimationHandler,
+            &FacingDirection,
+        ),
+        Without<ClientChild>,
+    >,
+    mut client_child: Query<
+        (Entity, &mut Sprite3d, &MeshMaterial3d<StandardMaterial>),
+        With<ClientChild>,
+    >,
+    client: ClientQuery<(&AnimationHandler, &FacingDirection)>,
     mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
-    for (mut sprite, material, options) in &mut npcs {
-        let Some(atlas) = (match options.0.or(*client) {
-            Some((anim, dir)) => anim.get_current_atlas(dir),
-            None => None,
+    let add_client_data = |(e, s, m)| {
+        return (e, s, m, client.0, client.1);
+    };
+
+    let npcs = npcs
+        .iter_mut()
+        .chain(client_child.iter_mut().map(add_client_data));
+
+    for (entity, mut sprite, material, anim, dir) in npcs {
+        let Ok(atlas) = anim.get_current_atlas(dir).inspect_err(|err| {
+            log::error!("Could not get animation sprite for {}! [{}]", entity, err)
         }) else {
             continue;
         };
@@ -171,11 +206,13 @@ pub(super) fn update_npc_sprites(
         sprite.texture_atlas = Some(atlas);
 
         // custom flip code to try and flip atlased sprites in place instead of as the whole texture
-        let Some((anim, dir)) = options.0.or(*client) else {
-            continue;
-        };
-
-        let Some((index, flip)) = anim.get_atlas_index(dir) else {
+        let Ok((_index, flip)) = anim.get_atlas_index(dir).inspect_err(|err| {
+            log::error!(
+                "Could not get atlas index for sprite flipping {}! [{}]",
+                entity,
+                err
+            )
+        }) else {
             continue;
         };
 
@@ -186,8 +223,8 @@ pub(super) fn update_npc_sprites(
             material.uv_transform = if flip.x {
                 // StandardMaterial::FLIP_HORIZONTAL
                 let columns = anim.spritesheet.max_frames as f32;
-                let column = (anim.time().floor() * 2.) + 1. ;
-                let offset = Vec2::X * f32::clamp(column / columns, 1. / columns, columns * 2. );
+                let column = (anim.time().floor() * 2.) + 1.;
+                let offset = Vec2::X * f32::clamp(column / columns, 1. / columns, columns * 2.);
                 Affine2 {
                     matrix2: Mat2::from_cols(Vec2::NEG_X, Vec2::Y),
                     // translation: Vec2::X,
@@ -195,20 +232,7 @@ pub(super) fn update_npc_sprites(
                 }
             } else {
                 Affine2::IDENTITY
-            } 
-            // * if flip.y {
-            //     // StandardMaterial::FLIP_VERTICAL
-            //     Affine2 {
-            //         matrix2: Mat2::from_cols(Vec2::X, Vec2::new(0.0, -1.0)),
-            //         // translation: Vec2::Y,
-            //         translation: Vec2::Y * (index as f32 + 1.)
-            //             / anim.spritesheet.total_variants as f32,
-            //     }
-            // } else {
-            //     Affine2::IDENTITY
-            // }
-            ;
+            };
         }
-        // }
     }
 }

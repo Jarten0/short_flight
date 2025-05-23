@@ -2,8 +2,8 @@ use crate::player::{Client, ClientQuery, Shaymin};
 use bevy::prelude::*;
 use bevy::render::camera::CameraProjection;
 
-const OVERRIDE_PERSPECTIVE: Option<f32> = Some(1.0);
-// const OVERRIDE_PERSPECTIVE: Option<f32> = None;
+// const OVERRIDE_PERSPECTIVE: Option<f32> = Some(1.0);
+const OVERRIDE_PERSPECTIVE: Option<f32> = None;
 // const OVERRIDE_ORIENTATION: Option<f32> = Some(-80.0_f32.to_radians());
 const OVERRIDE_ORIENTATION: Option<f32> = None;
 // const OVERRIDE_POSITION_OFFSET: Option<Vec3> = Some(Vec3::new(0.0, 20.0, 2.0));

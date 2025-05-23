@@ -1,4 +1,5 @@
 (
+    variant: LeafAttack,
     display_name: "Leaf",
     spritesheet: AnimationSpritesheet(
         animations: [Idle],

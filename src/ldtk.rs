@@ -14,7 +14,7 @@ use bevy::{
     prelude::*,
 };
 use bevy_asset_loader::asset_collection::AssetCollection;
-use bevy_ecs_tilemap::map::TilemapType;
+use bevy_ecs_tilemap::map::{TilemapGridSize, TilemapType};
 use bevy_ecs_tilemap::{
     TilemapBundle,
     map::{TilemapId, TilemapSize, TilemapTexture, TilemapTileSize},
@@ -70,7 +70,8 @@ impl Plugin for LdtkPlugin {
                 (
                     process_loaded_tile_maps.run_if(on_event::<AssetEvent<LdtkMap>>),
                     draw_mesh_intersections,
-                    query::label_chunks,
+                    query::draw_chunk_labels
+                        .run_if(|kb: Res<ButtonInput<KeyCode>>| kb.pressed(KeyCode::KeyC)),
                 ),
             )
             .add_systems(OnEnter(ShortFlightLoadingState::Done), deferred_mesh_spawn);
@@ -459,10 +460,12 @@ fn spawn_map_components(
                 //     neg_y_tolerance: f32::NEG_INFINITY,
                 // },
                 // StaticCollision {},
-                Transform::from_translation(Vec3::ZERO),
+                // Transform::from_translation(Vec3::ZERO),
+                Transform::from_xyz(position.x as f32, tile_depth.f32(), position.y as f32),
                 tile_depth,
                 tile_slope,
                 tile_flags,
+                Visibility::Visible,
             );
 
             let tile_entity = commands.spawn(bundle).id();
@@ -472,19 +475,24 @@ fn spawn_map_components(
 
         let tilemap = commands
             .entity(map_entity)
-            .add_children(&children)
+            .add_related::<ChildOf>(&children)
             .insert((
-                TilemapBundle {
-                    size,
-                    storage,
-                    tile_size,
-                    grid_size: tile_size.into(),
-                    map_type: TilemapType::default(),
-                    texture: TilemapTexture::Single(texture),
-                    transform: tilemap_transform,
-                    anchor: bevy_ecs_tilemap::anchor::TilemapAnchor::default(),
-                    ..default()
-                },
+                // TilemapBundle {
+                size,
+                storage,
+                tile_size,
+                // grid_size:
+                TilemapGridSize::from(tile_size),
+                // map_type:
+                TilemapType::default(),
+                // texture:
+                TilemapTexture::Single(texture),
+                // transform:
+                tilemap_transform,
+                // anchor:
+                bevy_ecs_tilemap::anchor::TilemapAnchor::default(),
+                // ..default()
+                // },
                 metadata_path,
                 Name::new(format!("Tilemap #{}", layer_id)),
             ))

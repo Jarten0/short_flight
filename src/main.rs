@@ -1,6 +1,7 @@
 #![feature(int_roundings)]
 #![feature(generic_arg_infer)]
 #![feature(path_add_extension)]
+#![feature(let_chains)]
 
 use bevy::prelude::*;
 use bevy_inspector_egui::bevy_egui::EguiPlugin;
@@ -23,7 +24,18 @@ mod tile;
 fn main() {
     App::new()
         // builtin
-        .add_plugins(DefaultPlugins.set(ImagePlugin::default_nearest()))
+        .add_plugins(
+            DefaultPlugins
+                .set(ImagePlugin::default_nearest())
+                .set(AssetPlugin {
+                    mode: AssetMode::Unprocessed,
+                    file_path: "assets".to_string(),
+                    processed_file_path: "imported_assets/Default".to_string(),
+                    watch_for_changes_override: None,
+                    meta_check: bevy::asset::AssetMetaCheck::default(),
+                    unapproved_path_mode: bevy::asset::UnapprovedPathMode::default(),
+                }),
+        )
         .add_plugins(MeshPickingPlugin)
         // game
         .add_plugins(assets::AssetsPlugin)
@@ -41,11 +53,25 @@ fn main() {
         .add_plugins(EguiPlugin {
             enable_multipass_for_primary_context: true,
         })
-        // .add_plugins(bevy_inspector_egui::quick::WorldInspectorPlugin::default())
+        .add_plugins(
+            bevy_inspector_egui::quick::WorldInspectorPlugin::new()
+                .run_if(|kb: Res<ButtonInput<KeyCode>>| kb.pressed(KeyCode::Backquote)),
+        )
         .add_plugins(bevy_ecs_tilemap::TilemapPlugin)
         // .add_plugins(bevy_editor_cam::DefaultEditorCamPlugins)
         .add_plugins(bevy::remote::RemotePlugin::default())
         .add_plugins(bevy::remote::http::RemoteHttpPlugin::default())
+        .add_systems(
+            PreUpdate,
+            |kb: Res<ButtonInput<KeyCode>>, mut exit: EventWriter<AppExit>| {
+                if kb.just_pressed(KeyCode::Escape) && !kb.pressed(KeyCode::KeyC) {
+                    log::info!("Escape key pressed, exiting...");
+                }
+                if kb.just_released(KeyCode::Escape) && !kb.pressed(KeyCode::KeyC) {
+                    exit.write(AppExit::Success);
+                }
+            },
+        )
         .run();
 }
 

@@ -1,17 +1,19 @@
 use super::{Client, ClientQuery};
 use crate::animation::{self, AnimType, cardinal};
-use crate::collision::physics::RigidbodyProperties;
+use crate::collision::physics::Rigidbody;
 use crate::collision::{
     self, BasicCollider, ColliderShape, CollisionEnterEvent, CollisionExitEvent, CollisionLayers,
     DynamicCollision, StaticCollision, TilemapCollision, ZHitbox,
 };
 use crate::ldtk::TileQuery;
 use crate::moves::Move;
-use crate::moves::interfaces::SpawnMove;
+use crate::moves::interfaces::{MoveList, SpawnMove};
 use crate::npc::animation::AnimationHandler;
 use crate::npc::stats::FacingDirection;
 use crate::tile::{TileDepth, TileFlags, TileSlope};
 use bevy::color::palettes;
+use bevy::platform::collections::HashMap;
+use bevy::platform::collections::HashSet;
 use bevy::prelude::*;
 
 pub fn setup(shaymin: Client, mut commands: Commands) {
@@ -26,9 +28,12 @@ pub fn setup(shaymin: Client, mut commands: Commands) {
             y_tolerance: 0.5,
             neg_y_tolerance: 0.0,
         },
-        RigidbodyProperties {
-            grounded: None,
+        Rigidbody {
+            ground: HashSet::default(),
+            wall: HashSet::new(),
             velocity: Vec3::default(),
+            previous_position: Vec3::default(),
+            last_push: Vec3::default(),
         },
         DynamicCollision::default(),
         TilemapCollision,
@@ -36,22 +41,24 @@ pub fn setup(shaymin: Client, mut commands: Commands) {
     commands
         .entity(*shaymin)
         .observe(collision::physics::move_out_from_tilemaps)
-        .observe(
-            |trigger: Trigger<CollisionEnterEvent>, mut query: Query<&mut RigidbodyProperties>| {
-                let Ok(mut rigidbody) = query.get_mut(trigger.this) else {
-                    return;
-                };
-                rigidbody.grounded = Some(trigger.other);
-            },
-        )
-        .observe(
-            |trigger: Trigger<CollisionExitEvent>, mut query: Query<&mut RigidbodyProperties>| {
-                let Ok(mut rigidbody) = query.get_mut(trigger.this) else {
-                    return;
-                };
-                rigidbody.grounded = None;
-            },
-        );
+        .observe(collision::physics::unground_on_leave)
+        // .observe(
+        //     |trigger: Trigger<CollisionEnterEvent>, mut query: Query<&mut Rigidbody>| {
+        //         let Ok(mut rigidbody) = query.get_mut(trigger.this) else {
+        //             return;
+        //         };
+        //         rigidbody.grounded = Some(trigger.other);
+        //     },
+        // )
+        // .observe(
+        //     |trigger: Trigger<CollisionExitEvent>, mut query: Query<&mut Rigidbody>| {
+        //         let Ok(mut rigidbody) = query.get_mut(trigger.this) else {
+        //             return;
+        //         };
+        //         rigidbody.grounded = None;
+        //     },
+        // )
+        ;
 }
 
 pub fn control_shaymin(
@@ -59,7 +66,7 @@ pub fn control_shaymin(
     shaymin: ClientQuery<
         (
             &Transform,
-            &mut RigidbodyProperties,
+            &mut Rigidbody,
             Option<&mut AnimationHandler>,
             &mut FacingDirection,
         ),
@@ -67,52 +74,63 @@ pub fn control_shaymin(
     >,
     kb: Res<ButtonInput<KeyCode>>,
     time: Res<Time>,
+    move_list: Option<Res<MoveList>>,
     mut commands: Commands,
     mut gizmos: Gizmos,
 ) {
+    let enable_gizmos: bool = kb.pressed(KeyCode::KeyX);
     let (transform, mut rigidbody, anim, mut facing) = shaymin.into_inner();
 
     let Some(mut anim) = anim else {
         return;
     };
 
-    if !anim.animation_data().is_blocking() {
-        let movement = time.delta_secs() * 30.;
-        if kb.just_pressed(KeyCode::KeyK) {
-            anim.start_animation(animation::AnimType::AttackShoot);
-            commands.queue(SpawnMove {
-                move_id: Move::MagicalLeaf,
-                parent: *shaymin_entity,
-            });
-            rigidbody.velocity = rigidbody
-                .velocity
-                .xz()
-                .move_towards(Vec2::ZERO, movement * 2.)
-                .xxy()
-                .with_y(rigidbody.velocity.y);
-        } else {
-            let input = get_input(kb).normalize_or_zero();
-            rigidbody.velocity = rigidbody
-                .velocity
-                .xz()
-                .move_towards(input.xz() * 1.5, movement)
-                .xxy()
-                .with_y(rigidbody.velocity.y);
-            if input.length_squared() > 0.0 {
-                let input = Dir2::new(input.xz().normalize_or(Vec2::NEG_Y)).unwrap();
+    if let Some(data) = anim.animation_data()
+        && !data.is_blocking()
+        && let Some(move_list) = move_list
+    {
+        let delta_movement = time.delta_secs() * 30.;
+        const MOVEBINDS: [(KeyCode, Move); 2] = [
+            (KeyCode::KeyK, Move::MagicalLeaf),
+            (KeyCode::KeyO, Move::Tackle),
+        ];
+        for (key, move_id) in MOVEBINDS {
+            if kb.just_pressed(key) {
+                use_move(
+                    commands,
+                    &mut rigidbody,
+                    &mut anim,
+                    delta_movement,
+                    move_id,
+                    &move_list,
+                    *shaymin_entity,
+                );
+                return;
+            };
+        }
+        let input = get_input(kb).normalize_or_zero();
+        rigidbody.velocity = rigidbody
+            .velocity
+            .xz()
+            .move_towards(input.xz() * 1.5, delta_movement)
+            .xxy()
+            .with_y(rigidbody.velocity.y);
+        if input.length_squared() > 0.0 {
+            let input = Dir2::new(input.xz().normalize_or(Vec2::NEG_Y)).unwrap();
 
-                let mut rhs = *input;
-                if **facing == -input {
-                    rhs -= Vec2::NEG_ONE;
-                }
+            let mut rhs = *input;
+            if **facing == -input {
+                rhs -= Vec2::NEG_ONE;
+            }
 
-                let target = facing
-                    .move_towards(
-                        rhs,
-                        time.delta_secs() * facing.distance_squared(*input) * 8.,
-                    )
-                    .normalize_or_zero();
+            let target = facing
+                .move_towards(
+                    rhs,
+                    time.delta_secs() * facing.distance_squared(*input) * 8.,
+                )
+                .normalize_or_zero();
 
+            if enable_gizmos {
                 gizmos.arrow(
                     transform.translation,
                     transform.translation + Vec3::from((*input, 1.0)).xzy(),
@@ -123,33 +141,55 @@ pub fn control_shaymin(
                     transform.translation + Vec3::from((target, 1.0)).xzy(),
                     palettes::basic::YELLOW,
                 );
-
-                let new_dir = Dir2::new(target).unwrap_or(*FacingDirection::default());
-
-                let new_cardinal =
-                    cardinal(input) != cardinal(**facing) || anim.current() != AnimType::Walking;
-
-                facing.set(new_dir);
-                if new_cardinal {
-                    anim.start_animation(animation::AnimType::Walking);
-                    anim.looping = true;
-                } else if rigidbody.velocity == Vec3::ZERO {
-                    anim.start_animation(animation::AnimType::Idle);
-                } else {
-                    anim.looping = true;
-                }
-            } else {
-                anim.start_animation(AnimType::Idle);
-                anim.looping = false;
             }
+
+            let new_dir = Dir2::new(target).unwrap_or(*FacingDirection::default());
+
+            let new_cardinal =
+                cardinal(input) != cardinal(**facing) || anim.current() != AnimType::Walking;
+
+            facing.set(new_dir);
+            if new_cardinal {
+                anim.start_animation(animation::AnimType::Walking);
+                anim.looping = true;
+            } else if rigidbody.velocity == Vec3::ZERO {
+                anim.start_animation(animation::AnimType::Idle);
+            } else {
+                anim.looping = true;
+            }
+        } else {
+            anim.start_animation(AnimType::Idle);
+            anim.looping = false;
         }
     }
 
-    gizmos.arrow(
-        transform.translation,
-        transform.translation + Vec3::from((***facing, 1.0)).xzy(),
-        palettes::basic::RED,
-    );
+    if enable_gizmos {
+        gizmos.arrow(
+            transform.translation,
+            transform.translation + Vec3::from((***facing, 1.0)).xzy(),
+            palettes::basic::RED,
+        );
+    }
+}
+
+fn use_move(
+    mut commands: Commands,
+    rigidbody: &mut Mut<Rigidbody>,
+    anim: &mut Mut<AnimationHandler>,
+    delta_movement: f32,
+    move_id: Move,
+    move_list: &MoveList,
+    parent: Entity,
+) {
+    let data = move_list.data.get(&move_id).unwrap();
+    anim.start_animation(animation::AnimType::AttackShoot);
+    commands.queue(SpawnMove { move_id, parent });
+    // rigidbody.velocity = rigidbody
+    //     .velocity
+    //     .xz()
+    //     .move_towards(Vec2::ZERO, delta_movement * 2.)
+    //     .xxy()
+    //     .with_y(rigidbody.velocity.y);
 }
 
 pub fn get_input(kb: Res<ButtonInput<KeyCode>>) -> Vec3 {
@@ -178,7 +218,7 @@ pub fn get_input(kb: Res<ButtonInput<KeyCode>>) -> Vec3 {
 pub fn draw_colliders(
     rigidbodies: Query<(
         &BasicCollider,
-        AnyOf<(&DynamicCollision, &StaticCollision)>,
+        AnyOf<(&Rigidbody, &StaticCollision)>,
         &GlobalTransform,
         &ZHitbox,
     )>,
@@ -246,6 +286,15 @@ pub fn draw_colliders(
                 ),
                 rect.size(),
                 color.with_green(0.5),
+            );
+        }
+        if let Some(dyn_info) = dyn_info
+            && dyn_info.last_push.normalize_or(Vec3::NAN) == Vec3::NAN
+        {
+            gizmos.arrow(
+                translation + (Vec3::Y * 8.),
+                translation + (Vec3::Y * 8.) + dyn_info.last_push * 8.,
+                palettes::basic::LIME,
             );
         }
     }

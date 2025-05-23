@@ -41,8 +41,12 @@ impl Plugin for ShayminPlugin {
                 insert_animation,
             )
             .add_systems(OnEnter(ShortFlightLoadingState::Done), insert_sprite)
-            .add_systems(FixedUpdate, (controller::control_shaymin))
-            .add_systems(PostUpdate, (controller::draw_colliders).chain())
+            .add_systems(FixedUpdate, controller::control_shaymin)
+            .add_systems(
+                PostUpdate,
+                controller::draw_colliders
+                    .run_if(|kb: Res<ButtonInput<KeyCode>>| kb.pressed(KeyCode::KeyV)),
+            )
             .add_systems(Update, update_mode_3d.before(switch_projection))
             .add_systems(OnEnter(ShortFlightLoadingState::FailState), retry);
     }
@@ -78,11 +82,13 @@ fn insert_sprite(
     mut commands: Commands,
     assets: Res<ShayminAssets>,
 ) {
-    let sprite =
-        anim_state::sprite(&assets).bundle_with_atlas(&mut sprite_3d_params, TextureAtlas {
+    let sprite = anim_state::sprite(&assets).bundle_with_atlas(
+        &mut sprite_3d_params,
+        TextureAtlas {
             layout: client.1.spritesheet.atlas.clone().unwrap(),
             index: 0,
-        });
+        },
+    );
     commands.entity(client.0).with_child((
         Name::new("3D Sprite"),
         sprite,

@@ -1,14 +1,14 @@
 use crate::animation::AnimType;
 use bevy::prelude::*;
 
+use crate::moves::Move;
 use crate::moves::interfaces::{MoveData, MoveInterfaces, MoveList, Moves, SpawnMove};
 use crate::moves::tackle::Tackle;
-use crate::moves::Move;
 use crate::player::Shaymin;
 
+use super::NPCInfo;
 use super::animation::AnimationHandler;
 use super::stats::FacingDirection;
-use super::NPCInfo;
 
 /// Describes the various states an NPC can be in,
 /// which influences how their AI makes decisions
@@ -75,7 +75,10 @@ pub(crate) fn run_enemy_npc_ai(
         };
 
         // blocking animations shouldnt let them do anything anyways, so skip now to save on the extra work
-        if anim.animation_data().is_blocking() {
+        if match anim.animation_data() {
+            Some(some) => some.is_blocking(),
+            None => false,
+        } {
             continue;
         }
         let result = match *npc_actions {
@@ -182,7 +185,9 @@ pub(crate) fn commit_npc_actions(
                 transform.translation += direction * time.delta_secs();
             }
             NPCDesicion::BasicAttack { direction, move_id } => {
-                if !anim.animation_data().is_blocking() {
+                if let Some(data) = anim.animation_data()
+                    && !data.is_blocking()
+                {
                     // if let Some(direction) = direction {
                     //     anim.update_direction(direction);
                     // }

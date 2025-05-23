@@ -27,6 +27,7 @@ impl Plugin for AssetsPlugin {
             .init_asset::<MoveData>()
             .register_asset_loader(RonAssetLoader::<MoveData>::with_extension(&["move.ron"]))
             .init_asset::<ProjectileData>()
+            .register_asset_reflect::<ProjectileData>()
             .register_asset_loader(RonAssetLoader::<ProjectileData>::with_extension(&[
                 "proj.ron",
             ]))
@@ -70,6 +71,16 @@ pub enum ShortFlightLoadingState {
     LoadNPCAssets,
     SpawnWithAssets,
     Done,
+}
+
+impl ShortFlightLoadingState {
+    pub fn done(&self) -> bool {
+        match self {
+            ShortFlightLoadingState::Done => true,
+            ShortFlightLoadingState::FailState => true,
+            _ => false,
+        }
+    }
 }
 
 #[derive(Debug)]

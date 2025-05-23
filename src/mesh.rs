@@ -12,6 +12,7 @@ use bevy_ecs_tilemap::prelude::*;
 use image::ImageBuffer;
 use short_flight::serialize_to_file;
 use std::collections::HashMap;
+use std::ops::Not;
 
 pub struct TileMeshManagerPlugin;
 
@@ -47,7 +48,6 @@ struct MeshInfo {
     texture_uvs: Vec<[f32; 2]>,
     indices: Vec<u32>,
     texture_index: Option<usize>,
-    translation: Vec3,
 }
 
 #[derive(Debug, Clone, Copy, Event, Reflect)]
@@ -207,6 +207,8 @@ fn spawn_massive_tilemap_mesh(
         let missing: Handle<StandardMaterial> =
             asset_server.add(StandardMaterial::from_color(palettes::basic::PURPLE));
 
+        log::info!("Created color materials");
+
         let mut tilemap_mesh_data = TilemapMeshData {
             texture: (*texture).clone(),
             textures,
@@ -222,9 +224,8 @@ fn spawn_massive_tilemap_mesh(
 
         let mut mesh_bundle_inserts = HashMap::new();
 
-        for (entity, mesh_info) in mesh_information {
-            let bundle =
-                get_mesh_components_from_info(&asset_server, tilemap_mesh_data_ref, mesh_info);
+        for (entity, [top, side]) in mesh_information {
+            let bundle = get_mesh_components_from_info(&asset_server, tilemap_mesh_data_ref, top);
 
             commands
                 .entity(entity)
@@ -235,9 +236,7 @@ fn spawn_massive_tilemap_mesh(
                 .observe(update_material_on::<Pointer<Pressed>>(
                     tilemap_mesh_data_ref.selected.clone(),
                 ))
-                .observe(update_material_on::<Pointer<Released>>(
-                    tilemap_mesh_data_ref.hovering.clone(),
-                ))
+                .observe(update_material_on::<Pointer<Released>>(bundle.1.0.clone()))
                 .observe(move_on_drag)
                 .observe(adjust_on_release)
                 .observe(adjust_on_up)
@@ -245,6 +244,9 @@ fn spawn_massive_tilemap_mesh(
                 .observe(select_tile_for_painting);
 
             mesh_bundle_inserts.insert(entity, bundle);
+
+            let mesh = get_mesh_components_from_info(&asset_server, tilemap_mesh_data_ref, side);
+            commands.spawn((ChildOf(entity), mesh, Visibility::Visible));
         }
 
         commands.insert_batch(mesh_bundle_inserts);
@@ -255,6 +257,7 @@ fn spawn_massive_tilemap_mesh(
 fn update_individual_tile_mesh(
     mut commands: Commands,
     mut changed_tiles: EventReader<TileChanged>,
+    mut get_children: Query<(&Children, &mut Transform)>,
     tile_data_query: Query<(
         &TilePos,
         &TileTextureIndex,
@@ -271,13 +274,18 @@ fn update_individual_tile_mesh(
         return;
     };
     for event in changed_tiles.read() {
+        let (children, mut transform) = get_children
+            .get_mut(event.tile)
+            .expect("Invoked TileChanged event with invalid entity!");
+        transform.translation.y = transform.translation.y.round();
+
         let key = {
             let key = MeshCacheKey {};
 
             key
         };
 
-        let Some(mesh_info) =
+        let Some([top, side]) =
             create_mesh_from_tile_data(event.tile, &tile_data_query, &tilemap_query)
         else {
             log::error!(
@@ -286,18 +294,30 @@ fn update_individual_tile_mesh(
             continue;
         };
 
-        let enclosing = Aabb::enclosing(
-            mesh_info
-                .vertices
-                .iter()
-                .map(|value| Vec3::from(*value))
-                .collect::<Vec<Vec3>>(),
-        )
-        .unwrap();
-        commands.entity(event.tile).insert((
-            get_mesh_components_from_info(&asset_server, &tilemap_mesh_data, mesh_info),
-            enclosing,
-        ));
+        let mesh_entites = [(event.tile, top), (children[0], side)];
+
+        for (entity, mesh_info) in mesh_entites {
+            let enclosing = Aabb::enclosing(
+                mesh_info
+                    .vertices
+                    .iter()
+                    .map(|value| Vec3::from(*value))
+                    .collect::<Vec<Vec3>>(),
+            )
+            .unwrap_or_default();
+            let bundle =
+                get_mesh_components_from_info(&asset_server, &tilemap_mesh_data, mesh_info);
+            commands
+                .entity(entity)
+                .queue(|mut entity: EntityWorldMut| {
+                    entity.get_mut::<Mesh3d>().unwrap().0 = bundle.0.0;
+                    entity
+                        .get_mut::<MeshMaterial3d<StandardMaterial>>()
+                        .unwrap()
+                        .0 = bundle.1.0;
+                })
+                .insert(enclosing);
+        }
     }
 }
 
@@ -305,15 +325,13 @@ fn get_mesh_components_from_info(
     asset_server: &Res<AssetServer>,
     tilemap_mesh_data: &TilemapMeshData,
     mesh_info: MeshInfo,
-) -> (Mesh3d, MeshMaterial3d<StandardMaterial>, Transform, ZHitbox) {
+) -> (Mesh3d, MeshMaterial3d<StandardMaterial>) {
     let MeshInfo {
-        translation,
         vertices,
         indices,
         texture_uvs,
         texture_index,
     } = mesh_info;
-
     let mut mesh = Mesh::new(
         PrimitiveTopology::TriangleList,
         RenderAssetUsages::default(),
@@ -323,7 +341,7 @@ fn get_mesh_components_from_info(
     .with_inserted_indices(Indices::U32(indices));
 
     mesh.duplicate_vertices();
-    mesh.compute_flat_normals();
+    mesh.compute_normals();
 
     let material = texture_index
         .map(|texture_index| {
@@ -335,16 +353,7 @@ fn get_mesh_components_from_info(
         })
         .unwrap_or(tilemap_mesh_data.missing.clone());
 
-    let bundle = (
-        Mesh3d(asset_server.add(mesh)),
-        MeshMaterial3d(material),
-        Transform::from_translation(translation),
-        ZHitbox {
-            y_tolerance: 0.0,
-            neg_y_tolerance: f32::NEG_INFINITY,
-        },
-    );
-    bundle
+    (Mesh3d(asset_server.add(mesh)), MeshMaterial3d(material))
 }
 
 fn create_mesh_from_tile_data(
@@ -358,28 +367,18 @@ fn create_mesh_from_tile_data(
         &TileFlags,
     )>,
     tilemap_query: &Query<(&TileStorage, &TilemapSize)>,
-) -> Option<MeshInfo> {
-    let mut mesh: MeshInfo = Default::default();
-    let MeshInfo {
-        translation,
-        vertices,
-        indices,
-        texture_uvs,
-        texture_index,
-    } = &mut mesh;
-
+) -> Option<[MeshInfo; 2]> {
+    let mut mesh: [MeshInfo; MESHES] = Default::default();
     let (tile_pos, tile_texture, tile_depth, tile_slope, tilemap_id, tile_flags) =
         tile_data_query.get(tile).ok()?;
-
-    *translation = Vec3::new(tile_pos.x as f32, tile_depth.f32(), tile_pos.y as f32);
 
     let (tile_storage, map_size) = tilemap_query
         .get(tilemap_id.0)
         .expect("Expected tilemap id to be valid");
     let wall_counts: [u32; 4] = [
-        SquareDirection::South,
-        SquareDirection::East,
         SquareDirection::North,
+        SquareDirection::East,
+        SquareDirection::South,
         SquareDirection::West,
     ]
     .map(|direction| tile_pos.square_offset(&direction, map_size))
@@ -397,17 +396,29 @@ fn create_mesh_from_tile_data(
         neighbor_components.map(|components| tile_depth.f32() - components.2.f32())
     })
     .map(|height_difference| {
+        const VOID_SIDE_LENGTH: u32 = 2;
         height_difference
             .map(|value| value.clamp(0., f32::INFINITY).ceil() as u32)
-            .unwrap_or(200)
+            .unwrap_or(VOID_SIDE_LENGTH)
     });
 
-    let (vertex_data, index_data) = calculate_mesh_data(tile_slope, wall_counts, *tile_flags);
+    let (vertex_sets, index_sets) = calculate_mesh_data(tile_slope, wall_counts, *tile_flags);
 
-    (*vertices, *texture_uvs) = vertex_data.into_iter().unzip();
-    *indices = index_data;
+    for (
+        i,
+        MeshInfo {
+            vertices,
+            indices,
+            texture_uvs,
+            texture_index,
+        },
+    ) in mesh.iter_mut().enumerate()
+    {
+        (*vertices, *texture_uvs) = vertex_sets[i].clone().into_iter().unzip();
+        *indices = index_sets[i].clone();
 
-    *texture_index.insert(tile_texture.0 as usize);
+        *texture_index.insert(tile_texture.0 as usize);
+    }
 
     return Some(mesh);
 }
@@ -436,15 +447,15 @@ fn move_on_drag(
     if drag.button != PointerButton::Primary {
         return;
     }
+    let Ok((mut transform, mut slope)) = transforms.get_mut(drag.target()) else {
+        return;
+    };
     if kb.pressed(KeyCode::ShiftLeft) {
-        let (_, mut slope) = transforms.get_mut(drag.target()).unwrap();
-
         slope.0.y -= drag.delta.y * 0.01;
 
         return;
     }
     picking.set(TilePickedMode::Move { tile: drag.target });
-    let (mut transform, _) = transforms.get_mut(drag.target()).unwrap();
 
     transform.translation.y -= drag.delta.y * 0.01;
 }
@@ -454,15 +465,18 @@ fn adjust_on_release(
     mut transforms: Query<(&mut TileDepth, &Transform)>,
     mut tile_change_writer: EventWriter<TileChanged>,
     mut picking: ResMut<TilePickedMode>,
-    kb: Res<ButtonInput<KeyCode>>,
 ) {
     if drag.button != PointerButton::Primary {
         return;
     }
     picking.set(TilePickedMode::Idle);
-    let (mut depth, transform) = transforms.get_mut(drag.target()).unwrap();
+    let Ok((mut depth, transform)) = transforms.get_mut(drag.target()) else {
+        return;
+    };
     *depth = TileDepth::from(transform.translation.y.round());
-    tile_change_writer.write(TileChanged { tile: drag.target });
+    tile_change_writer.write(TileChanged {
+        tile: drag.target(),
+    });
 }
 
 fn adjust_on_up(
@@ -476,40 +490,40 @@ fn adjust_on_up(
         return;
     }
     picking.set(TilePickedMode::Idle);
-    let (mut depth, transform) = transforms.get_mut(drag.target()).unwrap();
+    let Ok((mut depth, transform)) = transforms.get_mut(drag.target()) else {
+        return;
+    };
     *depth = TileDepth::from(transform.translation.y.round());
-    tile_change_writer.write(TileChanged { tile: drag.target });
+    tile_change_writer.write(TileChanged {
+        tile: drag.target(),
+    });
 }
 
 fn select_tile_for_modifying(
-    drag: Trigger<Pointer<Pressed>>,
+    press: Trigger<Pointer<Pressed>>,
     mut picking: ResMut<TilePickedMode>,
     kb: Res<ButtonInput<KeyCode>>,
-    tile_data: Query<(
-        &GlobalTransform,
-        &TilePos,
-        &TileDepth,
-        &TileSlope,
-        &TileFlags,
-    )>,
-    mut gizmos: Gizmos,
+    tile_data: Query<(&TilePos, &TileDepth, &TileSlope, &TileFlags)>,
 ) {
-    if drag.button != PointerButton::Primary {
+    if press.button != PointerButton::Primary {
         return;
     }
 
     let TilePickedMode::Idle = *picking else {
         return;
     };
-    let tile = drag.target;
 
-    *picking = TilePickedMode::Move { tile };
+    let tile = press.target;
 
-    let (transform, pos, depth, slope, flags) = tile_data.get(tile).unwrap();
+    let Ok((pos, depth, slope, flags)) = tile_data.get(tile) else {
+        return;
+    };
 
     if !kb.pressed(KeyCode::ShiftLeft) {
         return;
     }
+
+    *picking = TilePickedMode::Move { tile };
 
     log::info!(
         "Selected! target: [{:?}] depth: [{}] slope [{}] flags: [{}]",
@@ -520,12 +534,7 @@ fn select_tile_for_modifying(
     )
 }
 
-fn select_tile_for_painting(
-    drag: Trigger<Pointer<Over>>,
-    mut picking: ResMut<TilePickedMode>,
-    kb: Res<ButtonInput<KeyCode>>,
-    tile_data: Query<(&TilePos, &TileDepth, &TileSlope, &TileFlags)>,
-) {
+fn select_tile_for_painting(drag: Trigger<Pointer<Over>>, mut picking: ResMut<TilePickedMode>) {
     let TilePickedMode::Paint { selected, painting } = *picking else {
         return;
     };
@@ -573,37 +582,30 @@ fn adjust_tiles_via_keystrokes(
         }
     };
 
-    gizmos.grid(
-        Isometry3d::new(
-            Vec3::new(0., 1., 0.),
-            // transform.translation().y.round(),
-            // transform.translation().z,
-            Quat::IDENTITY, // Quat::from_rotation_x(f32::to_radians(-90.)),
-        ),
-        UVec2::new(400, 400),
-        Vec2::ZERO,
-        palettes::basic::OLIVE,
-    );
     let TilePickedMode::Move { tile } = *picking else {
         return;
     };
-    let (depth, mut slope, mut rotate_mode, transform) = tile_data.get_mut(tile).unwrap();
+    let Ok((depth, mut slope, mut rotate_mode, transform)) = tile_data.get_mut(tile) else {
+        return;
+    };
 
-    if !kb.pressed(KeyCode::ShiftLeft) {
-        gizmos.grid(
+    gizmos
+        .grid(
             Isometry3d::new(
                 Vec3::new(
                     transform.translation().x,
-                    1.,
-                    0., // transform.translation().y.round(),
-                        // transform.translation().z,
-                ),
-                Quat::IDENTITY, // Quat::from_rotation_x(f32::to_radians(-90.)),
+                    transform.translation().y.round(),
+                    transform.translation().z,
+                ) + (Vec3::new(0.5, 0.1, 0.5)),
+                Quat::from_rotation_x(f32::to_radians(-90.0)),
             ),
-            UVec2::new(4, 4),
-            Vec2::ZERO,
-            palettes::basic::OLIVE,
-        );
+            UVec2::new(5, 5),
+            Vec2::ONE,
+            palettes::basic::FUCHSIA,
+        )
+        .outer_edges();
+
+    if !kb.pressed(KeyCode::ShiftLeft) {
         return;
     }
 
@@ -705,63 +707,116 @@ fn call_save_event(kb: Res<ButtonInput<KeyCode>>, mut saves: EventWriter<GoSaveT
     }
 }
 
+const MESHES: usize = 2;
+/// Returns meshes based on the tile data given.
+/// Currently, the meshes returned are:
+///
+/// 0. the top "tile" mesh
+/// 1. the side mesh
 fn calculate_mesh_data(
     slope: &TileSlope,
     wall_counts: [u32; 4],
     flags: TileFlags,
-) -> (Vec<([f32; 3], [f32; 2])>, Vec<u32>) {
-    let mut vertices: Vec<([f32; 3], [f32; 2])> = vec![];
-    let mut indices: Vec<u32> = vec![];
+) -> ([Vec<([f32; 3], [f32; 2])>; MESHES], [Vec<u32>; MESHES]) {
+    let mut vertices: [Vec<([f32; 3], [f32; 2])>; MESHES] = Default::default();
+    let mut indices: [Vec<u32>; MESHES] = Default::default();
 
-    let mut index_offset = 0;
-    let mut offset_indices = |indices: Vec<u32>| {
+    let mut index_offset: u32 = 0;
+    fn offset_indices(indices: Vec<u32>, index_offset: &mut u32) -> Vec<u32> {
         let maximum = indices.iter().max().map(|i| *i + 1).unwrap_or_default();
         let new: Vec<u32> = indices
             .into_iter()
-            .map(|value| value + index_offset)
+            .map(|value| value + *index_offset)
             .collect();
-        index_offset += maximum;
+        *index_offset += maximum;
         new
+    }
+    let mut set: usize = 0;
+    let next = |set: &mut usize, index_offset: &mut u32| {
+        *set += 1;
+        *index_offset = 0;
     };
-    let mut insert = |data: (Vec<([f32; 3], [f32; 2])>, Vec<u32>)| {
-        assert_eq!(
-            data.0.len() as u32,
-            data.1
-                .clone()
-                .into_iter()
-                .max()
-                .map(|index| index + 1)
-                .unwrap_or(0)
-        );
-        assert_eq!(data.1.len() % 3, 0);
-        vertices.append(&mut { data.0 });
-        indices.append(&mut offset_indices(data.1));
-    };
+    let mut insert =
+        |data: (Vec<([f32; 3], [f32; 2])>, Vec<u32>), set: usize, index_offset: &mut u32| {
+            debug_assert_eq!(
+                data.0.len() as u32,
+                data.1
+                    .clone()
+                    .into_iter()
+                    .max()
+                    .map(|index| index + 1)
+                    .unwrap_or(0)
+            );
+            debug_assert_eq!(data.1.len() % 3, 0);
+
+            #[cfg(debug_assertions)]
+            {
+                let fold_err = |a: Result<(), f32>, b: Result<(), f32>| a.or(b);
+                let is_bad = |value: &f32| {
+                    value
+                        .is_finite()
+                        .not()
+                        .then_some(Err(*value))
+                        .unwrap_or(Ok(()))
+                };
+                {
+                    if let Err(e) = data
+                        .0
+                        .iter()
+                        .map(|vertex| {
+                            vertex.0.iter().map(is_bad).fold(Ok(()), fold_err).or(vertex
+                                .1
+                                .iter()
+                                .map(is_bad)
+                                .fold(Ok(()), fold_err))
+                        })
+                        .fold(Ok(()), fold_err)
+                    {
+                        panic!(
+                            "Found invalid value in vertex data: {}. \nVertex data: {:?}",
+                            &e, &vertices
+                        )
+                    }
+                };
+            }
+
+            vertices[set].append(&mut { data.0 });
+            indices[set].append(&mut offset_indices(data.1, index_offset));
+        };
 
     // [tl, tr, br, bl]
     let corners: [f32; 4] = slope.get_slope_corner_depths(!flags.intersects(TileFlags::Exclusive));
 
-    let top_vertices: (Vec<([f32; 3], [f32; 2])>, Vec<u32>) = top_vertices(corners, flags);
+    let tile_vertices = [
+        [0., corners[0], 0.],
+        [0., corners[1], 1.],
+        [1., corners[2], 1.],
+        [1., corners[3], 0.],
+    ];
 
-    for (side_index, side) in [[1, 0], [0, 3], [3, 2], [2, 1]].into_iter().enumerate() {
-        let [v1, v2] = [top_vertices.0[side[0]].0, top_vertices.0[side[1]].0];
-        insert(slope_wall_data(v1, v2));
+    let base_vertices = [
+        [0., slope.y, 0.],
+        [0., slope.y, 1.],
+        [1., slope.y, 1.],
+        [1., slope.y, 0.],
+    ];
 
+    insert(top_vertices(corners, flags), set, &mut index_offset);
+
+    next(&mut set, &mut index_offset);
+
+    insert(slope_walls(&tile_vertices), set, &mut index_offset);
+
+    for (side_index, side) in [[0, 1], [1, 2], [2, 3], [3, 0]].into_iter().enumerate() {
         for wall in 0..wall_counts[side_index] {
-            let (new_vertices, new_indices) = wall_vertices(v1, v2, side_index);
-            insert((
-                new_vertices
-                    .into_iter()
-                    .map(|mut v| {
-                        v.0[1] -= wall as f32;
-                        v
-                    })
-                    .collect::<Vec<([f32; 3], [f32; 2])>>(),
-                new_indices,
-            ));
+            let (new_vertices, new_indices) =
+                wall_vertices(base_vertices[side[0]], base_vertices[side[1]], wall);
+
+            insert((new_vertices, new_indices), set, &mut index_offset);
         }
     }
-    insert(top_vertices);
+
+    assert_eq!(set + 1, MESHES);
 
     (vertices, indices)
 }
@@ -772,10 +827,7 @@ fn calculate_mesh_data(
 ///
 /// `corners` should be given in the order of
 /// [Top left, Top right, Bottom right, Bottom left]
-fn top_vertices(
-    corners: [f32; 4],
-    rotate_mode: TileFlags,
-) -> (Vec<([f32; 3], [f32; 2])>, Vec<u32>) {
+fn top_vertices(corners: [f32; 4], flags: TileFlags) -> (Vec<([f32; 3], [f32; 2])>, Vec<u32>) {
     let mut vertices = vec![
         ([1., corners[1], 0.]), // tr
         ([0., corners[0], 0.]), // tl
@@ -783,7 +835,7 @@ fn top_vertices(
         ([1., corners[2], 1.]), // br
     ];
     let mut uvs = vec![[1., 0.], [0., 0.], [0., 1.], [1., 1.]];
-    let mut indices = match rotate_mode {
+    let mut indices = match flags {
         flags if flags.intersects(TileFlags::FlipTriangles & TileFlags::Fold) => [0, 1, 2, 2, 3, 0],
         flags if flags.intersects(TileFlags::FlipTriangles) => [0, 1, 2, 2, 3, 0],
         flags if flags.intersects(TileFlags::Fold) => [0, 1, 2, 2, 3, 0],
@@ -793,19 +845,19 @@ fn top_vertices(
 
     //(1,0)
     //(2,3)
-    if rotate_mode.intersects(TileFlags::FlipX) {
+    if flags.intersects(TileFlags::FlipX) {
         uvs.swap(1, 0);
         uvs.swap(2, 3);
     }
-    if rotate_mode.intersects(TileFlags::FlipY) {
+    if flags.intersects(TileFlags::FlipY) {
         uvs.swap(1, 2);
         uvs.swap(0, 3);
     }
-    if rotate_mode.intersects(TileFlags::FlipTriangles) {
+    if flags.intersects(TileFlags::FlipTriangles) {
         // 012,230 -> 123,301
         indices = vec![1, 2, 3, 3, 0, 1];
     }
-    if rotate_mode.intersects(TileFlags::Fold) {
+    if flags.intersects(TileFlags::Fold) {
         vertices.append(&mut vec![
             vertices[0].clone(), // tr2
             vertices[2].clone(), // bl2
@@ -823,81 +875,89 @@ fn top_vertices(
     (vertices, indices)
 }
 
-/// generates the vertex data for a sloped wall, given:
+/// generates the vertex data for sloped walls, given:
 /// - the base depth of the tile
 /// - the two vertices that form the *top* line of the sloped wall
-fn slope_wall_data(v1: [f32; 3], v2: [f32; 3]) -> (Vec<([f32; 3], [f32; 2])>, Vec<u32>) {
-    // return Default::default();
-    let depth = 0.0;
-    let mut vertices: Vec<([f32; 3], [f32; 2])> = vec![];
-    let mut indices: Vec<u32> = vec![];
+fn slope_walls(vertices: &[[f32; 3]; 4]) -> (Vec<([f32; 3], [f32; 2])>, Vec<u32>) {
+    const UVS: [[f32; 2]; 4] = [[0., 0.], [0., 1.], [1., 1.], [1., 0.]];
+    let min = vertices
+        .clone()
+        .into_iter()
+        .map(|value| value[1])
+        .reduce(f32::min)
+        .unwrap();
 
-    let v1_is_slope = v1[1] > depth;
-    let v2_is_slope = v2[1] > depth;
-    if v1_is_slope {
-        vertices.push({
-            let mut v = v1.clone();
-            v[1] = depth;
-            (v, [1., 1.])
-        });
+    let mut index_offset: u32 = 0;
+    fn offset_indices(indices: Vec<u32>, index_offset: &mut u32) -> Vec<u32> {
+        let maximum = indices.iter().max().map(|i| *i + 1).unwrap_or_default();
+        let new: Vec<u32> = indices
+            .into_iter()
+            .map(|value| value + *index_offset)
+            .collect();
+        *index_offset += maximum;
+        new
     }
-    if v2_is_slope {
-        vertices.push({
-            let mut v = v2.clone();
-            v[1] = depth;
-            (v, [0., 1.])
-        });
-    }
-    if v1_is_slope | v2_is_slope {
-        let max = f32::max(v1[1], v2[1]);
-        vertices.push((v2.clone(), [0., (v1[1] - depth) / max]));
-        vertices.push((v2.clone(), [1., (v2[1] - depth) / max]));
+
+    let mut new_vertices: Vec<([f32; 3], [f32; 2])> = vec![];
+    let mut indices: Vec<u32> = vec![];
+    for [corner1, corner2] in [[0, 1], [1, 2], [2, 3], [3, 0]] {
+        let mut v1 = vertices[corner1];
+        let mut v2 = vertices[corner2];
+        let v1_is_slope = v1[1] > min;
+        let v2_is_slope = v2[1] > min;
         if v1_is_slope & v2_is_slope {
-            indices.append(&mut (vec![0, 1, 2, 0, 2, 3]));
-        } else {
-            indices.append(&mut (vec![0, 1, 2]));
-        }
+            new_vertices.push((v1, UVS[0]));
+            new_vertices.push((v2, UVS[1]));
+            new_vertices.push((Vec3::from(v1).with_y(min).to_array(), UVS[2]));
+            new_vertices.push((Vec3::from(v2).with_y(min).to_array(), UVS[3]));
+            indices.append(&mut offset_indices(
+                vec![0, 1, 2, 2, 3, 0],
+                &mut index_offset,
+            ));
+        } else if v1_is_slope {
+            new_vertices.push((v1, UVS[0]));
+            new_vertices.push((Vec3::from(v1).with_y(min).to_array(), UVS[2]));
+            new_vertices.push((Vec3::from(v2).with_y(min).to_array(), UVS[3]));
+            indices.append(&mut offset_indices(vec![0, 1, 2], &mut index_offset));
+        } else if v2_is_slope {
+            new_vertices.push((v2, UVS[1]));
+            new_vertices.push((Vec3::from(v1).with_y(min).to_array(), UVS[2]));
+            new_vertices.push((Vec3::from(v2).with_y(min).to_array(), UVS[3]));
+            indices.append(&mut offset_indices(vec![0, 1, 2], &mut index_offset));
+        };
     }
-    (vertices, indices)
+    (new_vertices, indices)
 }
 
 /// generates the vertex data for a wall, given:
 /// - two vertices that form the *top* line for the wall
 /// - a direction value to get the normals with
 fn wall_vertices(
-    wall_vertex_1: [f32; 3],
-    wall_vertex_2: [f32; 3],
-    side_index: usize,
+    v1: [f32; 3],
+    v2: [f32; 3],
+    wall_no: u32,
 ) -> (Vec<([f32; 3], [f32; 2])>, Vec<u32>) {
-    let uv = match side_index {
-        // Back
-        0 => [[1.0, 0.0], [0.0, 0.0], [0.0, 1.0], [1.0, 1.0]],
-        // Front
-        2 => [[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]],
-        // Right
-        1 => [[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]],
-        // Left
-        3 => [[1.0, 0.0], [0.0, 0.0], [0.0, 1.0], [1.0, 1.0]],
-        // Top
-        4 => [[1.0, 0.0], [0.0, 0.0], [0.0, 1.0], [1.0, 1.0]],
-        // Bottom
-        5 => [[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]],
-        _ => [[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]],
-    };
+    const UV: [[f32; 2]; 4] = [[0.0, 0.0], [0.0, 1.0], [1.0, 1.0], [1.0, 0.0]];
     let vertices = vec![
-        (wall_vertex_1.clone(), uv[0]),
-        (wall_vertex_2.clone(), uv[1]),
+        (v2.clone(), UV[1]),
+        (v1.clone(), UV[0]),
         {
-            let mut v = wall_vertex_2.clone();
+            let mut v = v1.clone();
             v[1] -= 1.0;
-            (v, uv[2])
+            (v, UV[3])
         },
         {
-            let mut v = wall_vertex_1.clone();
+            let mut v = v2.clone();
             v[1] -= 1.0;
-            (v, uv[3])
+            (v, UV[2])
         },
-    ];
+    ]
+    .into_iter()
+    .map(|mut vertex| {
+        vertex.0[1] -= wall_no as f32;
+        vertex
+    })
+    .collect();
     let indices = vec![0, 1, 2, 2, 3, 0];
     (vertices, indices)
 }

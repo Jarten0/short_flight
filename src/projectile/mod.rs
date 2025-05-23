@@ -10,6 +10,7 @@ use serde::{Deserialize, Serialize};
     Default,
     Reflect,
     Sequence,
+    Serialize,
     Deserialize,
     Clone,
     Copy,
@@ -48,8 +49,8 @@ pub mod interfaces {
     };
     use crate::npc::animation::AnimationHandler;
     use crate::npc::stats::{Damage, FacingDirection};
-    use crate::sprite3d::{Sprite3dBuilder, Sprite3dParams};
-    use bevy::ecs::system::SystemState;
+    use crate::sprite3d::{Sprite3d, Sprite3dBuilder, Sprite3dBundle, Sprite3dParams};
+    use bevy::asset::LoadState;
     use bevy::platform::collections::HashMap;
     use bevy::prelude::*;
     use bevy_asset_loader::asset_collection::AssetCollection;
@@ -64,13 +65,31 @@ pub mod interfaces {
         pub image_files: HashMap<Projectile, Handle<Image>>,
     }
 
+    /// Container for all information pertaining to a projectile type.
+    ///
+    ///
     #[derive(Debug, Asset, Reflect, Serialize, Deserialize, Clone, Default)]
     pub(crate) struct ProjectileData {
+        pub(crate) variant: Projectile,
         pub(crate) display_name: String,
         pub(crate) spritesheet: AnimationSpritesheet,
         pub(crate) collider: ColliderShape,
         #[serde(default)]
         pub(crate) damage: Damage,
+        #[serde(skip)]
+        pub(crate) assets: Option<ProjectileAssets>,
+    }
+
+    /// Container for handles that a projectile will use.
+    /// Initialized once per projectile type.
+    #[derive(Debug, Reflect, Clone)]
+    pub(crate) struct ProjectileAssets {
+        pub mesh: Handle<Mesh>,
+        pub texture: Handle<Image>,
+        pub material: Handle<StandardMaterial>,
+        pub data: Handle<ProjectileData>,
+        pub atlas: Handle<TextureAtlasLayout>,
+        pub sprite3d_base: Sprite3d,
     }
 
     pub trait ProjectileInterface: Send + Sync {
@@ -100,11 +119,11 @@ pub mod interfaces {
                     .map(|input| (input, register_interface(input)))
                     .collect(),
             );
-            interfaces.iter_mut().for_each(|(_, registration)| {
+            for (_, registration) in interfaces.iter_mut() {
                 registration.build(app);
-            });
+            }
             app.insert_resource(interfaces)
-                .add_systems(PreUpdate, validate_npc_data);
+                .add_systems(Update, validate_projectile_data);
         }
     }
 
@@ -128,18 +147,15 @@ pub mod interfaces {
                 Some(name) => name.as_str().to_string(),
                 None => format!("{:?}", self.source),
             };
-            log::info!(
-                "Spawning projectile: Source [{}] ID [{:?}]",
-                display,
-                self.projectile_id
-            );
+
             let catalog = world.resource::<ProjectileCatalog>();
             let data_assets = world.resource::<Assets<ProjectileData>>();
-            let image_handle = catalog
+            let image = catalog
                 .image_files
                 .get(&self.projectile_id)
                 .expect("The projectile catalog is missing an image variant.")
                 .clone_weak();
+
             let handle = catalog.data_files.get(&self.projectile_id).expect(
                 "The projectile catalog MUST exhaustively contain all projectile variants.",
             );
@@ -147,16 +163,27 @@ pub mod interfaces {
                 "SpawnProjectile should not be called before all projectile data assets are loaded.",
             ).clone();
 
-            let source_transform = self.position;
-            // let source_transform = match self.source {
-            //     Some(source) => world
-            //         .get_entity(source)
-            //         .expect("Called SpawnProjectile with non-existant source")
-            //         .get::<GlobalTransform>()
-            //         .expect("Source entity does not have GlobalTransform")
-            //         .translation(),
-            //     None => Vec3::ZERO,
-            // };
+            let assets = data.assets.as_ref().unwrap();
+
+            let asset_server = world.resource::<AssetServer>();
+
+            #[cfg(debug_assertions)]
+            for (handle, item) in [
+                (assets.atlas.clone_weak().untyped(), "atlas"),
+                (assets.data.clone_weak().untyped(), "data"),
+                (assets.texture.clone_weak().untyped(), "texture"),
+                (assets.mesh.clone_weak().untyped(), "mesh"),
+                (assets.material.clone_weak().untyped(), "material"),
+            ] {
+                debug_assert!(
+                    asset_server.is_loaded(&handle),
+                    "{} projectile {} asset is not loaded! [{:?}], Load state: [{:?}]",
+                    display,
+                    item,
+                    handle,
+                    asset_server.get_load_state(&handle)
+                )
+            }
 
             let id = world
                 .spawn((
@@ -173,32 +200,24 @@ pub mod interfaces {
                         y_tolerance: 0.5,
                         neg_y_tolerance: 0.0,
                     },
-                    Transform::from_translation(source_transform)
+                    Transform::from_translation(self.position)
                         .with_rotation(Quat::from_rotation_x(f32::to_radians(-90.0))),
                     data.damage.clone(),
                     DynamicCollision::default(),
+                    Sprite3dBundle {
+                        sprite_3d: assets.sprite3d_base.clone(),
+                        mesh: bevy::prelude::Mesh3d(assets.mesh.clone_weak()),
+                        material: bevy::prelude::MeshMaterial3d(assets.material.clone_weak()),
+                    },
                 ))
                 .id();
 
-            let mut system_state: SystemState<Sprite3dParams> = SystemState::new(world);
-
-            let sprite_3d_bundle = Sprite3dBuilder {
-                image: image_handle,
-                pixels_per_metre: 32.0,
-                pivot: None,
-                alpha_mode: AlphaMode::Mask(0.5),
-                unlit: false,
-                double_sided: true,
-                emissive: LinearRgba::BLACK,
-            }
-            .bundle_with_atlas(&mut system_state.get_mut(world), TextureAtlas {
-                layout: data.spritesheet.atlas.clone().unwrap(),
-                index: 0,
-            });
-
-            world.entity_mut(id).insert(sprite_3d_bundle);
-
-            system_state.apply(world);
+            log::info!(
+                "Spawning projectile: Source [{}] ID [{:?}] Entity [{}]",
+                display,
+                self.projectile_id,
+                id
+            );
 
             world.resource_scope(
                 |world, mut projectile_interfaces: Mut<ProjectileInterfaces>| {
@@ -213,24 +232,59 @@ pub mod interfaces {
         }
     }
 
-    pub(crate) fn validate_npc_data(
+    pub(crate) fn validate_projectile_data(
         mut asset_events: EventReader<AssetEvent<ProjectileData>>,
-        mut npc_datas: ResMut<Assets<ProjectileData>>,
+        mut projectile_data: ResMut<Assets<ProjectileData>>,
+        catalog: Option<Res<ProjectileCatalog>>,
         asset_server: Res<AssetServer>,
+        mut sprite3d_params: Sprite3dParams,
     ) {
+        let Some(catalog) = catalog else { return };
         for event in asset_events.read() {
             match event {
                 AssetEvent::Added { id } => {
-                    let data = npc_datas.get_mut(*id).unwrap();
+                    let data_handle = projectile_data.get_strong_handle(*id).unwrap();
+                    let data = projectile_data.get_mut(*id).unwrap();
+                    log::info!("Validating projectile: {:?}", data.variant);
                     data.spritesheet.atlas =
                         Some(asset_server.add(data.spritesheet.get_atlas_layout()));
+
+                    let Sprite3dBundle {
+                        sprite_3d: sprite3d_base,
+                        mesh,
+                        material,
+                    } = Sprite3dBuilder {
+                        image: catalog
+                            .image_files
+                            .get(&data.variant)
+                            .expect("Image file not found for variant")
+                            .clone(),
+                        pixels_per_metre: 32.0,
+                        pivot: None,
+                        alpha_mode: AlphaMode::Mask(0.5),
+                        unlit: true,
+                        double_sided: true,
+                        emissive: LinearRgba::BLACK,
+                    }
+                    .bundle(&mut sprite3d_params, &asset_server);
+
+                    data.assets = Some(ProjectileAssets {
+                        mesh: mesh.0,
+                        material: material.0,
+                        sprite3d_base,
+                        texture: catalog
+                            .image_files
+                            .get(&data.variant)
+                            .expect("Image file not found for variant")
+                            .clone(),
+                        data: data_handle,
+                        atlas: data.spritesheet.atlas.as_ref().unwrap().clone(),
+                    });
+
+                    log::info!("Validated")
                 }
                 _ => (),
             }
-        }
-
-        for (id, data) in npc_datas.iter_mut() {
-            assert!(data.spritesheet.atlas.is_some());
         }
     }
 }

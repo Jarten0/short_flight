@@ -6,6 +6,7 @@ use bevy::prelude::*;
 use bitflags::bitflags;
 use serde::{Deserialize, Serialize};
 
+use crate::assets::ShortFlightLoadingState;
 use crate::ldtk::TileQuery;
 use crate::tile::{TileDepth, TileFlags, TileSlope};
 
@@ -52,7 +53,8 @@ impl Plugin for CollisionPlugin {
                     },
                     // GlobalTransforms will be finally updated in PostUpdate
                 )
-                    .chain(),
+                    .chain()
+                    .run_if(|load: Res<State<ShortFlightLoadingState>>| load.done()),
             );
     }
 }
@@ -127,9 +129,7 @@ impl CollisionEventTracker {
 
 /// Information for objects that move
 #[derive(Debug, Reflect, Component, Default)]
-pub struct DynamicCollision {
-    pub previous_position: Vec3,
-}
+pub struct DynamicCollision;
 
 /// Labeller for collision entities that should interact with tilemaps
 #[derive(Debug, Component)]
@@ -137,7 +137,7 @@ pub struct TilemapCollision;
 
 /// Information for objects that cannot nor should ever move
 #[derive(Debug, Reflect, Component, Default)]
-pub struct StaticCollision {}
+pub struct StaticCollision;
 
 #[derive(Debug, Reflect, Component, Clone, Serialize, Deserialize)]
 #[require(ZHitbox, Transform)]
@@ -146,7 +146,6 @@ pub struct BasicCollider {
     pub shape: ColliderShape,
     pub layers: CollisionLayers,
     pub can_interact: CollisionLayers,
-    /// Only stored if
     pub currently_colliding: HashSet<Entity>,
 }
 
@@ -240,12 +239,17 @@ pub struct ZHitbox {
 
 impl ZHitbox {
     #[inline]
-    pub fn height(&self) -> f32 {
+    pub const fn height(&self) -> f32 {
         self.y_tolerance + self.neg_y_tolerance
     }
 
     /// Returns `true` if the two ZHitboxes are intersecting, even if their transform x's and y's are distant.
-    pub fn intersecting(&self, other: &Self, self_y_offset: f32, other_y_offset: f32) -> bool {
+    pub const fn intersecting(
+        &self,
+        other: &Self,
+        self_y_offset: f32,
+        other_y_offset: f32,
+    ) -> bool {
         let range = [
             self.neg_y_tolerance + self_y_offset,
             self.y_tolerance + self_y_offset,
@@ -406,7 +410,9 @@ pub fn query_tile_overlaps(
     tile_data: Query<(Entity, &TileDepth, &TileSlope, &TileFlags)>,
     mut gizmos: Gizmos,
     mut collision_tracker: ResMut<CollisionTracker<TilemapCollision>>,
+    kb: Res<ButtonInput<KeyCode>>,
 ) {
+    let enable_gizmos = kb.pressed(KeyCode::KeyZ);
     for (entity, gtransform, zhitbox, basic_collider) in entities {
         let translation = gtransform.translation();
         let position = translation.xz();
@@ -456,14 +462,16 @@ pub fn query_tile_overlaps(
                     });
 
                 for tile_pos in bounding_box_tile_iter.clone() {
-                    gizmos.rect(
-                        Isometry3d::new(
-                            tile_pos.xxy().with_y(3.5),
-                            Quat::from_rotation_x(f32::to_radians(90.)),
-                        ),
-                        Vec2::ONE,
-                        palettes::basic::MAROON,
-                    );
+                    if enable_gizmos {
+                        gizmos.rect(
+                            Isometry3d::new(
+                                tile_pos.xxy().with_y(3.5),
+                                Quat::from_rotation_x(f32::to_radians(90.)),
+                            ),
+                            Vec2::ONE,
+                            palettes::basic::MAROON,
+                        );
+                    }
 
                     let f = |tile_pos: &Vec2| {
                         position.move_towards(*tile_pos, *radius + std::f32::consts::FRAC_1_SQRT_2)
@@ -475,19 +483,21 @@ pub fn query_tile_overlaps(
                     //     log::info!("{}", (move_towards - tile_pos).length())
                     // }
 
-                    gizmos.line(
-                        Vec3 {
-                            x: tile_pos.x,
-                            y: 2.,
-                            z: tile_pos.y,
-                        },
-                        Vec3 {
-                            x: move_towards.x,
-                            y: 2.,
-                            z: move_towards.y,
-                        },
-                        palettes::basic::AQUA,
-                    );
+                    if enable_gizmos {
+                        gizmos.line(
+                            Vec3 {
+                                x: tile_pos.x,
+                                y: 2.,
+                                z: tile_pos.y,
+                            },
+                            Vec3 {
+                                x: move_towards.x,
+                                y: 2.,
+                                z: move_towards.y,
+                            },
+                            palettes::basic::AQUA,
+                        );
+                    }
                 }
 
                 overlapping_tiles = bounding_box_tile_iter
@@ -521,7 +531,7 @@ pub fn query_tile_overlaps(
         for (tile_entity, depth, slope, flags) in overlapping_tile_query {
             if !zhitbox.intersecting(
                 &ZHitbox {
-                    y_tolerance: slope.xz().max_element(),
+                    y_tolerance: slope.get_slope_height(flags),
                     neg_y_tolerance: f32::NEG_INFINITY,
                 },
                 translation.y,
@@ -557,7 +567,7 @@ pub fn query_tile_overlaps(
 
             if !zhitbox.intersecting(
                 &ZHitbox {
-                    y_tolerance: slope.xz().max_element(),
+                    y_tolerance: slope.get_slope_height(flags),
                     neg_y_tolerance: f32::NEG_INFINITY,
                 },
                 translation.y,

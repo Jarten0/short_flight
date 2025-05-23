@@ -38,6 +38,7 @@ impl MoveComponent for MagicalLeaf {
             position,
             direction,
         });
+        world.flush()
     }
 }
 
