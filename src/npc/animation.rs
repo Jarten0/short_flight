@@ -3,8 +3,9 @@ use super::stats::FacingDirection;
 use crate::animation::{AnimType, AnimationData, AnimationDirLabel};
 use crate::assets::AnimationSpritesheet;
 use crate::moves::interfaces::MoveInfo;
-use crate::player::{ClientChild, ClientQuery, Shaymin};
+use crate::shaymin::{ClientQuery, Shaymin, SpriteChildMarker};
 use crate::sprite3d::Sprite3d;
+use bevy::color::palettes;
 use bevy::math::Affine2;
 use bevy::platform::collections::HashMap;
 use bevy::prelude::*;
@@ -153,7 +154,7 @@ impl AnimationHandler {
     }
 }
 
-pub(super) fn update_sprite_timer(
+pub(super) fn update_anim_handler_timer(
     mut commands: Commands,
     mut npcs: Query<(&mut AnimationHandler, &Children)>,
     move_query: Query<&MoveInfo>,
@@ -170,7 +171,7 @@ pub(super) fn update_sprite_timer(
     }
 }
 
-pub(super) fn update_npc_sprites(
+pub(super) fn update_anim_sprites(
     mut npcs: Query<
         (
             Entity,
@@ -179,15 +180,22 @@ pub(super) fn update_npc_sprites(
             &AnimationHandler,
             &FacingDirection,
         ),
-        Without<ClientChild>,
+        Without<SpriteChildMarker>,
     >,
     mut client_child: Query<
         (Entity, &mut Sprite3d, &MeshMaterial3d<StandardMaterial>),
-        With<ClientChild>,
+        With<SpriteChildMarker>,
     >,
     client: ClientQuery<(&AnimationHandler, &FacingDirection)>,
     mut materials: ResMut<Assets<StandardMaterial>>,
+    kb: Res<ButtonInput<KeyCode>>,
+    mut gizmos: Gizmos,
+    transform_query: Query<&GlobalTransform>,
+    mesh_query: Query<&Mesh3d>,
+    meshes: ResMut<Assets<Mesh>>,
 ) {
+    let draw_gizmos = kb.pressed(KeyCode::KeyF);
+
     let add_client_data = |(e, s, m)| {
         return (e, s, m, client.0, client.1);
     };
@@ -197,6 +205,34 @@ pub(super) fn update_npc_sprites(
         .chain(client_child.iter_mut().map(add_client_data));
 
     for (entity, mut sprite, material, anim, dir) in npcs {
+        if draw_gizmos && let Ok(transform) = transform_query.get(entity) {
+            let translation = transform.translation();
+            gizmos.rect(
+                Isometry3d::new(
+                    translation.with_y(translation.y + 2.),
+                    Quat::from_rotation_x(f32::to_radians(-90.0)),
+                ),
+                Vec2::ONE,
+                palettes::basic::WHITE,
+            );
+
+            // if let Ok(_mesh3d) = mesh_query.get(entity)
+            //     && let Some(mesh) = meshes.get(&_mesh3d.0)
+            // {
+            //     for vertex in mesh
+            //         .attribute(Mesh::ATTRIBUTE_POSITION)
+            //         .unwrap()
+            //         .as_float3()
+            //         .unwrap()
+            //     {
+            //         gizmos.sphere(
+            //             Vec3::from(*vertex) + translation,
+            //             0.1,
+            //             palettes::basic::YELLOW,
+            //         );
+            //     }
+            // }
+        }
         let Ok(atlas) = anim.get_current_atlas(dir).inspect_err(|err| {
             log::error!("Could not get animation sprite for {}! [{}]", entity, err)
         }) else {
@@ -233,6 +269,18 @@ pub(super) fn update_npc_sprites(
             } else {
                 Affine2::IDENTITY
             };
+
+            if draw_gizmos && let Ok(transform) = transform_query.get(entity) {
+                gizmos.rect(
+                    Isometry3d::new(
+                        transform.translation()
+                            + material.uv_transform.translation.extend(2.1).xzy(),
+                        Quat::from_rotation_x(f32::to_radians(-90.0)),
+                    ),
+                    Vec2::ONE / 2.,
+                    palettes::basic::FUCHSIA,
+                );
+            }
         }
     }
 }

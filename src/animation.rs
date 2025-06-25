@@ -1,7 +1,7 @@
+pub use AnimType::*;
 use bevy::prelude::*;
 use bevy::reflect::Reflect;
 use serde::{Deserialize, Serialize};
-pub use AnimType::*;
 
 use crate::npc::stats::FacingDirection;
 
@@ -86,7 +86,7 @@ pub struct AnimationData {
     #[serde(default)]
     #[serde(alias = "can_move")]
     /// set a specific value for can_move for this animation
-    blocked_override: Option<bool>,
+    pub blocking_override: Option<bool>,
 }
 
 impl AnimationData {
@@ -111,7 +111,7 @@ impl AnimationData {
     }
     /// returns true if this animation allows the player to move
     pub fn is_blocking(&self) -> bool {
-        if let Some(ovr) = self.blocked_override {
+        if let Some(ovr) = self.blocking_override {
             return ovr;
         }
         return self.variant.blocks();
@@ -126,7 +126,7 @@ impl AnimationData {
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Default, Reflect)]
 pub enum AnimationDirLabel {
     #[default]
-    /// This animation does not get flipped and always appears like this.
+    /// This animation always appears like this regardless of orientation.
     None,
     /// Has a secondary, vertical variant.
     Vertical,

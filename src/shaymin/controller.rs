@@ -81,21 +81,64 @@ pub fn control_shaymin(
     let enable_gizmos: bool = kb.pressed(KeyCode::KeyX);
     let (transform, mut rigidbody, anim, mut facing) = shaymin.into_inner();
 
+    if enable_gizmos {
+        gizmos.arrow(
+            transform.translation,
+            transform.translation + Vec3::from((***facing, 1.0)).xzy(),
+            palettes::basic::RED,
+        );
+    }
+
     let Some(mut anim) = anim else {
         return;
     };
 
     if let Some(data) = anim.animation_data()
-        && !data.is_blocking()
         && let Some(move_list) = move_list
     {
+        let input = get_input(&kb).normalize_or_zero();
+        let input_dir = Dir2::new(input.xz().normalize_or(Vec2::NEG_Y)).unwrap();
+
+        let mut rhs = *input_dir;
+        if **facing == -input_dir {
+            rhs -= Vec2::NEG_ONE;
+        }
+
+        let target = facing
+            .move_towards(
+                rhs,
+                time.delta_secs() * facing.distance_squared(*input_dir) * 15.,
+            )
+            .normalize_or_zero();
+
+        if input != Vec3::ZERO {
+            facing.set(Dir2::new(target).unwrap_or(*FacingDirection::default()));
+        }
+
+        if enable_gizmos {
+            gizmos.arrow(
+                transform.translation,
+                transform.translation + Vec3::from((*input_dir, 1.0)).xzy(),
+                palettes::basic::GREEN,
+            );
+            // gizmos.arrow(
+            //     transform.translation,
+            //     transform.translation + Vec3::from((target, 1.0)).xzy(),
+            //     palettes::basic::YELLOW,
+            // );
+        }
+
+        if data.is_blocking() {
+            return;
+        }
+
         let delta_movement = time.delta_secs() * 30.;
         const MOVEBINDS: [(KeyCode, Move); 2] = [
             (KeyCode::KeyK, Move::MagicalLeaf),
             (KeyCode::KeyO, Move::Tackle),
         ];
         for (key, move_id) in MOVEBINDS {
-            if kb.just_pressed(key) {
+            if kb.pressed(key) {
                 use_move(
                     commands,
                     &mut rigidbody,
@@ -108,67 +151,29 @@ pub fn control_shaymin(
                 return;
             };
         }
-        let input = get_input(kb).normalize_or_zero();
         rigidbody.velocity = rigidbody
             .velocity
             .xz()
             .move_towards(input.xz() * 1.5, delta_movement)
             .xxy()
             .with_y(rigidbody.velocity.y);
-        if input.length_squared() > 0.0 {
-            let input = Dir2::new(input.xz().normalize_or(Vec2::NEG_Y)).unwrap();
-
-            let mut rhs = *input;
-            if **facing == -input {
-                rhs -= Vec2::NEG_ONE;
-            }
-
-            let target = facing
-                .move_towards(
-                    rhs,
-                    time.delta_secs() * facing.distance_squared(*input) * 8.,
-                )
-                .normalize_or_zero();
-
-            if enable_gizmos {
-                gizmos.arrow(
-                    transform.translation,
-                    transform.translation + Vec3::from((*input, 1.0)).xzy(),
-                    palettes::basic::GREEN,
-                );
-                gizmos.arrow(
-                    transform.translation,
-                    transform.translation + Vec3::from((target, 1.0)).xzy(),
-                    palettes::basic::YELLOW,
-                );
-            }
-
-            let new_dir = Dir2::new(target).unwrap_or(*FacingDirection::default());
-
-            let new_cardinal =
-                cardinal(input) != cardinal(**facing) || anim.current() != AnimType::Walking;
-
-            facing.set(new_dir);
-            if new_cardinal {
-                anim.start_animation(animation::AnimType::Walking);
-                anim.looping = true;
-            } else if rigidbody.velocity == Vec3::ZERO {
-                anim.start_animation(animation::AnimType::Idle);
-            } else {
-                anim.looping = true;
-            }
-        } else {
+        if input.length_squared() <= 0.0 {
             anim.start_animation(AnimType::Idle);
             anim.looping = false;
+            return;
         }
-    }
 
-    if enable_gizmos {
-        gizmos.arrow(
-            transform.translation,
-            transform.translation + Vec3::from((***facing, 1.0)).xzy(),
-            palettes::basic::RED,
-        );
+        let new_cardinal =
+            cardinal(input_dir) != cardinal(**facing) || anim.current() != AnimType::Walking;
+
+        if new_cardinal {
+            anim.start_animation(animation::AnimType::Walking);
+            anim.looping = true;
+        } else if rigidbody.velocity == Vec3::ZERO {
+            anim.start_animation(animation::AnimType::Idle);
+        } else {
+            anim.looping = true;
+        }
     }
 }
 
@@ -192,7 +197,7 @@ fn use_move(
     //     .with_y(rigidbody.velocity.y);
 }
 
-pub fn get_input(kb: Res<ButtonInput<KeyCode>>) -> Vec3 {
+pub fn get_input(kb: &ButtonInput<KeyCode>) -> Vec3 {
     let mut dir: Vec3 = Vec3::ZERO;
 
     if kb.pressed(KeyCode::ShiftLeft) {
@@ -218,7 +223,7 @@ pub fn get_input(kb: Res<ButtonInput<KeyCode>>) -> Vec3 {
 pub fn draw_colliders(
     rigidbodies: Query<(
         &BasicCollider,
-        AnyOf<(&Rigidbody, &StaticCollision)>,
+        AnyOf<(&Rigidbody, &StaticCollision, &DynamicCollision)>,
         &GlobalTransform,
         &ZHitbox,
     )>,
@@ -226,7 +231,7 @@ pub fn draw_colliders(
     shaymin: Client,
     mut gizmos: Gizmos,
 ) {
-    if let Ok((collider, (dyn_info, stat_info), transform, zhitbox)) =
+    if let Ok((collider, (dyn_info, stat_info, _dyn_info), transform, zhitbox)) =
         rigidbodies.get(shaymin.entity())
     {
         for entity in &collider.currently_colliding {
@@ -247,7 +252,7 @@ pub fn draw_colliders(
         }
     }
 
-    for (collider, (dyn_info, stat_info), transform, zhitbox) in &rigidbodies {
+    for (collider, (dyn_info, stat_info, _dyn_info), transform, zhitbox) in &rigidbodies {
         let color = match (dyn_info, stat_info) {
             (Some(_), _) => palettes::basic::AQUA,
             (_, Some(_)) => palettes::basic::FUCHSIA,

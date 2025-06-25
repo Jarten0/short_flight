@@ -1,7 +1,7 @@
 use crate::animation::{AnimType, AnimationData};
 use crate::moves::interfaces::MoveData;
 use crate::projectile::interfaces::ProjectileData;
-use crate::{ldtk, moves, npc, player, projectile};
+use crate::{ldtk, moves, npc, projectile, shaymin};
 use bevy::asset::AssetLoader;
 use bevy::platform::collections::HashMap;
 use bevy::prelude::*;
@@ -10,6 +10,9 @@ use serde::{Deserialize, Serialize};
 use std::marker::PhantomData;
 use thiserror::Error;
 
+pub fn loaded(load: Res<State<ShortFlightLoadingState>>) -> bool {
+    load.done()
+}
 pub struct AssetsPlugin;
 
 impl Plugin for AssetsPlugin {
@@ -34,7 +37,7 @@ impl Plugin for AssetsPlugin {
             .add_loading_state(
                 LoadingState::new(ShortFlightLoadingState::First)
                     .load_collection::<ldtk::MapAssets>()
-                    .load_collection::<player::assets::ShayminAssets>()
+                    .load_collection::<shaymin::assets::ShayminAssets>()
                     .on_failure_continue_to_state(ShortFlightLoadingState::FailState)
                     .continue_to_state(ShortFlightLoadingState::PlayerLoading),
             )
@@ -189,14 +192,14 @@ impl AnimationSpritesheet {
             .data
             .0
             .iter()
-            .map(|data| data.1.frames)
+            .map(|(_, data)| data.frames)
             .max()
             .unwrap_or(0);
         self.total_variants = self
             .data
             .0
             .iter()
-            .map(|(_, value)| value.direction_label.directional_sprite_count())
+            .map(|(_, data)| data.direction_label.directional_sprite_count())
             .sum();
         TextureAtlasLayout::from_grid(
             self.sprite_size,

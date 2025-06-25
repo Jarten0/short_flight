@@ -2,6 +2,7 @@
 #![feature(generic_arg_infer)]
 #![feature(path_add_extension)]
 #![feature(let_chains)]
+#![feature(slice_as_array)]
 
 use bevy::prelude::*;
 use bevy_inspector_egui::bevy_egui::EguiPlugin;
@@ -11,14 +12,15 @@ pub(crate) mod camera;
 pub(crate) mod collision;
 pub(crate) mod editor;
 pub(crate) mod sprite3d;
+pub(crate) mod billboard;
 
 mod assets;
 mod ldtk;
 mod mesh;
 mod moves;
 mod npc;
-mod player;
 mod projectile;
+mod shaymin;
 mod tile;
 
 fn main() {
@@ -42,7 +44,7 @@ fn main() {
         .add_plugins(npc::NPCPlugin)
         .add_plugins(moves::interfaces::MovePlugin)
         .add_plugins(projectile::interfaces::ProjectilePlugin)
-        .add_plugins(player::ShayminPlugin)
+        .add_plugins(shaymin::ShayminPlugin)
         .add_plugins(ldtk::LdtkPlugin)
         // lib
         .add_plugins(camera::CustomCameraPlugin)

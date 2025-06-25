@@ -389,10 +389,29 @@ fn spawn_map_components(
                             .to_string()
                     });
 
+                let depth = entity
+                    .field_instances
+                    .iter()
+                    .find(|field| field.identifier == "Depth")
+                    .map(|field| {
+                        field
+                            .value
+                            .as_ref()
+                            .unwrap_or(&serde_json::Value::Number(
+                                serde_json::Number::from_f64(0.0).unwrap(),
+                            ))
+                            .as_f64()
+                            .expect("Expected float value for Depth, found something else")
+                    })
+                    .unwrap_or_default();
+
                 commands.queue(npc::commands::SpawnNPC {
                     npc_id: NPC::try_from(id as usize).unwrap(),
-                    position: Vec3::new(entity.px[0] as f32 / 32., 0.0, entity.px[1] as f32 / 32.)
-                        + tilemap_transform.translation,
+                    position: Vec3::new(
+                        entity.px[0] as f32 / 32.,
+                        depth as f32,
+                        entity.px[1] as f32 / 32.,
+                    ) + tilemap_transform.translation,
                     name,
                 });
             }

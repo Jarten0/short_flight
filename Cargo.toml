@@ -4,13 +4,23 @@ version = "0.1.0"
 edition = "2024"
 default-run = "short_flight"
 
-# Enable a small amount of optimization in the dev profile.
+# testing
+# # Enable a small amount of optimization in the dev profile.
 [profile.dev]
 opt-level = 1
 
 # Enable a large amount of optimization in the dev profile for dependencies.
 [profile.dev.package."*"]
 opt-level = 3
+
+# debugging
+# Enable a small amount of optimization in the dev profile.
+# [profile.dev]
+# opt-level = 0
+
+# # Enable a large amount of optimization in the dev profile for dependencies.
+# [profile.dev.package."*"]
+# opt-level = 0
 
 # Enable more optimization in the release profile at the cost of compile time.
 [profile.release]
@@ -32,7 +42,47 @@ opt-level = "s"
 strip = "debuginfo"
 
 [dependencies]
-bevy = { version = "0.16.0", features = ["dynamic_linking", "android-game-activity", "android_shared_stdcxx", "animation", "bevy_asset", "bevy_color", "bevy_core_pipeline", "bevy_gilrs", "bevy_gizmos", "bevy_gltf", "bevy_mesh_picking_backend", "bevy_pbr", "bevy_picking", "bevy_render", "bevy_scene", "bevy_sprite", "bevy_sprite_picking_backend", "bevy_state", "bevy_text", "bevy_ui", "bevy_ui_picking_backend", "bevy_window", "bevy_winit", "custom_cursor", "default_font", "hdr", "multi_threaded", "png", "smaa_luts", "sysinfo_plugin", "tonemapping_luts", "vorbis", "webgl2", "x11", "bevy_remote", "glam_assert", "file_watcher", "serialize", "debug_glam_assert"], default-features = false }
+bevy = { version = "0.16.0", features = [
+    "dynamic_linking",
+    "android-game-activity",
+    "android_shared_stdcxx",
+    "animation",
+    "bevy_asset",
+    "bevy_color",
+    "bevy_core_pipeline",
+    "bevy_gilrs",
+    "bevy_gizmos",
+    "bevy_gltf",
+    "bevy_mesh_picking_backend",
+    "bevy_pbr",
+    "bevy_picking",
+    "bevy_render",
+    "bevy_scene",
+    "bevy_sprite",
+    "bevy_sprite_picking_backend",
+    "bevy_state",
+    "bevy_text",
+    "bevy_ui",
+    "bevy_ui_picking_backend",
+    "bevy_window",
+    "bevy_winit",
+    "custom_cursor",
+    "default_font",
+    "hdr",
+    "multi_threaded",
+    "png",
+    "smaa_luts",
+    "sysinfo_plugin",
+    "tonemapping_luts",
+    "vorbis",
+    "webgl2",
+    "x11",
+    "bevy_remote",
+    "glam_assert",
+    "file_watcher",
+    "serialize",
+    "debug_glam_assert",
+], default-features = false }
 bevy-inspector-egui = "0.31.0"
 bevy_asset_loader = { version = "0.23.0-rc.4", features = [
     "3d",

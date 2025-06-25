@@ -1,11 +1,13 @@
 use crate::animation::{AnimType, AnimationDirLabel};
 use crate::assets::AnimationAssets;
 use crate::assets::ShortFlightLoadingState;
+use crate::billboard::Billboard;
 use crate::camera::{Mode3D, switch_projection};
 use crate::ldtk::TileQuery;
 use crate::npc::animation::AnimationHandler;
 use crate::npc::stats::{Damage, FacingDirection, Health};
 use crate::sprite3d::Sprite3dParams;
+use crate::tile::{TileDepth, TileFlags, TileSlope};
 use assets::ShayminAssets;
 use bevy::prelude::*;
 use bevy_ecs_tilemap::tiles::TileStorage;
@@ -22,8 +24,11 @@ pub struct Shaymin;
 pub type Client<'a> = Single<'a, Entity, With<Shaymin>>;
 pub type ClientQuery<'a, T, F = ()> = Single<'a, T, (With<Shaymin>, F)>;
 
+/// Marker component for a sprite child entity. Not to be confused with fantasy Sprite children.
+///
+/// Used as a workaround for entities with their sprite functionality separated from their top level entity.
 #[derive(Debug, Component)]
-pub struct ClientChild;
+pub struct SpriteChildMarker;
 
 /// Insert into world's that manage client-player state for the silly little goober :3
 ///
@@ -92,9 +97,10 @@ fn insert_sprite(
     commands.entity(client.0).with_child((
         Name::new("3D Sprite"),
         sprite,
-        Transform::from_xyz(0.0, 1.0, 0.0)
+        Transform::from_xyz(0.0, 0.0, 0.0)
             .with_rotation(Quat::from_rotation_x(f32::to_radians(-90.0))),
-        ClientChild,
+        SpriteChildMarker,
+        Billboard::default(),
     ));
 }
 
@@ -125,14 +131,23 @@ fn retry(mut commands: Commands, asset_server: Res<AssetServer>) {
 }
 
 fn update_mode_3d(
-    shaymin: ClientQuery<&Transform>,
-    transform: Query<&Transform>,
+    shaymin: ClientQuery<&GlobalTransform>,
     mut mode: ResMut<Mode3D>,
-    mut tile_query: TileQuery,
+    tile_query: TileQuery,
+    tile_data: Query<(&GlobalTransform, &TileSlope, &TileFlags), With<TileDepth>>,
 ) {
-    match tile_query.get_tile(shaymin.translation) {
+    let translation = shaymin.translation();
+    match tile_query.get_tile(translation) {
         Some(entity) => {
-            let difference = shaymin.translation.y - transform.get(entity).unwrap().translation.y;
+            let Ok((gtransform, tile_slope, tile_flags)) = tile_data.get(entity) else {
+                return;
+            };
+
+            let slope_height = tile_slope
+                .get_height_at_point(tile_flags, translation.xz() - gtransform.translation().xz());
+
+            let difference = translation.y - slope_height;
+            debug_assert_ne!(difference, f32::NAN);
             **mode = (difference / 100.).clamp(0., 1.);
         }
         None => (),

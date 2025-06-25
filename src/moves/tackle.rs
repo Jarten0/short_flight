@@ -1,4 +1,5 @@
 use crate::animation::AnimType;
+use crate::collision::physics::Rigidbody;
 use crate::collision::{BasicCollider, CollisionLayers, DynamicCollision, ZHitbox};
 use crate::npc::stats::FacingDirection;
 
@@ -19,7 +20,7 @@ impl MoveComponent for Tackle {
             BasicCollider::new(
                 true,
                 move_data.collider.clone().unwrap(),
-                CollisionLayers::NPC,
+                CollisionLayers::Attack,
                 CollisionLayers::NPC,
             ),
             ZHitbox {
@@ -27,6 +28,7 @@ impl MoveComponent for Tackle {
                 neg_y_tolerance: 0.0,
             },
             DynamicCollision::default(),
+            Rigidbody::default(),
             Self,
         ));
         let mut anim = world
@@ -38,18 +40,32 @@ impl MoveComponent for Tackle {
 
 fn tackle(
     active_moves: Query<(&Tackle, &ChildOf)>,
-    mut parent: Query<(&mut Transform, &AnimationHandler, &FacingDirection)>,
+    mut parent_query: Query<(
+        &mut Transform,
+        &AnimationHandler,
+        &FacingDirection,
+        &mut Rigidbody,
+    )>,
     time: Res<Time>,
 ) {
-    for (tackle, entity) in active_moves.iter() {
-        let (mut transform, anim, dir) = parent.get_mut(entity.parent()).unwrap();
+    for (_move, child) in active_moves.iter() {
+        let (mut transform, anim, dir, mut rigidbody) =
+            parent_query.get_mut(child.parent()).unwrap();
 
-        match anim.frame() / anim.speed() {
+        let frame = anim.frame() / anim.speed();
+        match frame {
             0.0..2.0 => {
-                transform.translation += (**dir * time.delta_secs() * 4.0).xxy().with_y(0.0);
+                rigidbody.velocity += (**dir * time.delta_secs() * (4.0 * 4.0 / (frame + 1.0)))
+                    .extend(0.)
+                    .xzy();
+
+                rigidbody.velocity.y = 1.5 - frame;
             }
             2.0..3.0 => {
-                transform.translation += (**dir * time.delta_secs() * 0.5).xxy().with_y(0.0);
+                rigidbody.velocity = (rigidbody.velocity.xz().normalize() * 0.2)
+                    .extend(rigidbody.velocity.y)
+                    .xzy();
+                // transform.translation += (**dir * time.delta_secs() * 0.5).xxy().with_y(0.0);
             }
             _ => (),
         }

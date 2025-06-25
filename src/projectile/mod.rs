@@ -44,6 +44,7 @@ impl MapKey for Projectile {
 pub mod interfaces {
     use super::{Projectile, register_interface};
     use crate::assets::AnimationSpritesheet;
+    use crate::billboard::Billboard;
     use crate::collision::{
         BasicCollider, ColliderShape, CollisionLayers, DynamicCollision, ZHitbox,
     };
@@ -193,7 +194,7 @@ pub mod interfaces {
                     BasicCollider::new(
                         true,
                         data.collider.clone(),
-                        CollisionLayers::Projectile,
+                        CollisionLayers::Projectile & CollisionLayers::Attack,
                         CollisionLayers::NPC,
                     ),
                     ZHitbox {
@@ -209,6 +210,7 @@ pub mod interfaces {
                         mesh: bevy::prelude::Mesh3d(assets.mesh.clone_weak()),
                         material: bevy::prelude::MeshMaterial3d(assets.material.clone_weak()),
                     },
+                    Billboard::default(),
                 ))
                 .id();
 

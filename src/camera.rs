@@ -1,13 +1,22 @@
-use crate::player::{Client, ClientQuery, Shaymin};
+use crate::billboard::{self, BillboardTarget};
+use crate::shaymin::{Client, ClientQuery, Shaymin};
 use bevy::prelude::*;
 use bevy::render::camera::CameraProjection;
 
-// const OVERRIDE_PERSPECTIVE: Option<f32> = Some(1.0);
-const OVERRIDE_PERSPECTIVE: Option<f32> = None;
-// const OVERRIDE_ORIENTATION: Option<f32> = Some(-80.0_f32.to_radians());
-const OVERRIDE_ORIENTATION: Option<f32> = None;
-// const OVERRIDE_POSITION_OFFSET: Option<Vec3> = Some(Vec3::new(0.0, 20.0, 2.0));
-const OVERRIDE_POSITION_OFFSET: Option<Vec3> = None;
+const OVERRIDE_PERSPECTIVE: Option<f32> =
+    // Default
+    None;
+// Some(1.0);
+
+const OVERRIDE_ORIENTATION: Option<f32> =
+    // Default
+    // None;
+    Some(f32::to_radians(-90.0 * 5. / 6.));
+
+const OVERRIDE_POSITION_OFFSET: Option<Vec3> =
+    // Default
+    // None;
+    Some(Vec3::new(0.0, 20.0, 5.0));
 
 static ORTHOGRAPHIC_PROJECTION: OrthographicProjection = OrthographicProjection {
     scale: 1.0,
@@ -43,6 +52,7 @@ static PERSPECTIVE_PROJECTION: PerspectiveProjection = PerspectiveProjection {
     far: 1000.0,
     aspect_ratio: 16.0 / 9.0,
 };
+
 pub struct CustomCameraPlugin;
 
 #[derive(Debug, Deref, DerefMut, Default, Resource)]
@@ -52,7 +62,14 @@ impl Plugin for CustomCameraPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<Mode3D>()
             .add_systems(PreStartup, setup)
-            .add_systems(Update, (switch_projection, follow_player));
+            .add_systems(
+                Update,
+                (
+                    switch_projection,
+                    follow_player,
+                    billboard::update_billboards,
+                ),
+            );
     }
 }
 
@@ -70,19 +87,25 @@ pub(crate) fn setup(mut commands: Commands) {
         },
         ShowLightGizmo::default(),
     ));
-    commands.spawn((
-        Camera3d::default(),
-        Transform::default()
-            .looking_at(Vec3::NEG_Y, Vec3::Y)
-            .with_rotation(match OVERRIDE_ORIENTATION {
-                Some(some) => Quat::from_rotation_x(some),
-                None => Quat::from_rotation_x(f32::to_radians(-90.0)),
-            })
-            .with_translation(match OVERRIDE_POSITION_OFFSET {
-                Some(some) => some,
-                None => Vec3::new(0.0, 20.0, 0.0),
-            }),
-    ));
+
+    let camera = commands
+        .spawn((
+            Camera3d::default(),
+            Transform::default()
+                .looking_at(Vec3::NEG_Y, Vec3::Y)
+                .with_rotation(match OVERRIDE_ORIENTATION {
+                    Some(some) => Quat::from_rotation_x(some),
+                    None => Quat::from_rotation_x(f32::to_radians(-90.0)),
+                })
+                .with_translation(match OVERRIDE_POSITION_OFFSET {
+                    Some(some) => some,
+                    None => Vec3::new(0.0, 20.0, 0.0),
+                }),
+        ))
+        .id();
+    billboard::DEFAULT_BILLBOARD_TARGET
+        .set(camera)
+        .expect("Failed to initialize camera as default billboard target");
 }
 
 pub(crate) fn switch_projection(mut projection: Single<&mut Projection>, mode: Res<Mode3D>) {
@@ -93,10 +116,10 @@ pub(crate) fn switch_projection(mut projection: Single<&mut Projection>, mode: R
 
     **projection = match mode3d {
         0.0 => Projection::Orthographic(ORTHOGRAPHIC_PROJECTION.clone()),
-        x if (0.0..1.0).contains(&x) => Projection::custom(OrthographicPerspectiveLerpProjection {
-            base_perspective: PerspectiveProjection::default(),
+        0.0..1.0 => Projection::custom(OrthographicPerspectiveLerpProjection {
+            base_perspective: PERSPECTIVE_PROJECTION.clone(),
             base_orthographic: ORTHOGRAPHIC_PROJECTION.clone(),
-            t: x,
+            s: mode3d,
         }),
         1.0 => Projection::Perspective(PERSPECTIVE_PROJECTION.clone()),
         mode => panic!("Invalid Mode3D value! [{}]", mode),
@@ -121,7 +144,7 @@ pub(crate) fn follow_player(
 pub struct OrthographicPerspectiveLerpProjection {
     base_perspective: PerspectiveProjection,
     base_orthographic: OrthographicProjection,
-    t: f32,
+    s: f32,
 }
 
 impl Default for OrthographicPerspectiveLerpProjection {
@@ -129,7 +152,7 @@ impl Default for OrthographicPerspectiveLerpProjection {
         Self {
             base_perspective: Default::default(),
             base_orthographic: OrthographicProjection::default_3d(),
-            t: 0.0f32,
+            s: 0.0f32,
         }
     }
 }
@@ -138,13 +161,13 @@ impl CameraProjection for OrthographicPerspectiveLerpProjection {
     fn get_clip_from_view(&self) -> Mat4 {
         let mat = self.base_perspective.get_clip_from_view();
         let mat2 = self.base_orthographic.get_clip_from_view();
-        (mat * self.t) + (mat2 * (1.0 - self.t))
+        (mat * self.s) + (mat2 * (1.0 - self.s))
     }
 
     fn get_clip_from_view_for_sub(&self, sub_view: &bevy::render::camera::SubCameraView) -> Mat4 {
         let mat = self.base_perspective.get_clip_from_view_for_sub(sub_view);
         let mat2 = self.base_orthographic.get_clip_from_view_for_sub(sub_view);
-        (mat * self.t) + (mat2 * (1.0 - self.t))
+        (mat * self.s) + (mat2 * (1.0 - self.s))
     }
 
     fn update(&mut self, width: f32, height: f32) {
@@ -153,10 +176,26 @@ impl CameraProjection for OrthographicPerspectiveLerpProjection {
     }
 
     fn far(&self) -> f32 {
-        f32::max(self.base_perspective.far(), self.base_orthographic.far())
+        f32::lerp(
+            self.base_perspective.far(),
+            self.base_orthographic.far(),
+            self.s,
+        )
     }
 
     fn get_frustum_corners(&self, z_near: f32, z_far: f32) -> [bevy::math::Vec3A; 8] {
-        self.base_perspective.get_frustum_corners(z_near, z_far)
+        let perspective = self.base_perspective.get_frustum_corners(z_near, z_far);
+        let orthographic = self.base_orthographic.get_frustum_corners(z_near, z_far);
+        let iter = perspective
+            .into_iter()
+            .zip(orthographic)
+            .map(|(p, o)| Vec3A::from(Vec3::from(p).lerp(o.into(), self.s)));
+        debug_assert!(
+            orthographic
+                .iter()
+                .map(|value| value.is_finite())
+                .fold(true, |a, b| a & b)
+        );
+        *iter.collect::<Vec<Vec3A>>().as_array().unwrap()
     }
 }

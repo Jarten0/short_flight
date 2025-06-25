@@ -8,7 +8,7 @@ use bevy_ecs_tilemap::anchor::TilemapAnchor;
 use bevy_ecs_tilemap::map::{TilemapGridSize, TilemapSize, TilemapTileSize, TilemapType};
 use bevy_ecs_tilemap::tiles::{TilePos, TileStorage};
 
-use crate::player::ClientQuery;
+use crate::shaymin::ClientQuery;
 
 use super::tilemap_manager::{TilemapManager, minstep_to_tilemap};
 

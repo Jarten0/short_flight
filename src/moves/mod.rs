@@ -182,7 +182,7 @@ pub mod interfaces {
 
             let move_entity = world.spawn(move_bundle).id();
 
-            log::info!("move:{}, parent:{}", move_entity, self.parent);
+            // log::info!("spawned move:{}, parent:{}", move_entity, self.parent);
 
             world.resource_scope(|world, mut move_interfaces: Mut<MoveInterfaces>| {
                 let Some(interface) = move_interfaces.0.get_mut(&self.move_id) else {

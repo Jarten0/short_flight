@@ -1,6 +1,6 @@
 (
     variant: LeafAttack,
-    display_name: "Leaf",
+    display_name: "Leaves",
     spritesheet: AnimationSpritesheet(
         animations: [Idle],
         sprite_size: UVec2(32, 32),

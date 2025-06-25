@@ -29,12 +29,18 @@ impl Plugin for NPCPlugin {
                 OnExit(ShortFlightLoadingState::LoadNPCAssets),
                 file::validate_npc_data,
             )
-            .add_systems(PreUpdate, animation::update_sprite_timer)
+            .add_systems(
+                PreUpdate,
+                animation::update_anim_handler_timer.run_if(crate::assets::loaded),
+            )
             .add_systems(
                 FixedUpdate,
                 (ai::run_enemy_npc_ai, ai::commit_npc_actions).chain(),
             )
-            .add_systems(PostUpdate, animation::update_npc_sprites);
+            .add_systems(
+                PostUpdate,
+                animation::update_anim_sprites.before(crate::sprite3d::handle_texture_atlases),
+            );
     }
 }
 

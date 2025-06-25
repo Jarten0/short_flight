@@ -87,7 +87,7 @@ impl Default for Sprite3dCaches {
 }
 
 // Update the mesh of a Sprite3d with an atlas sprite when its index changes.
-fn handle_texture_atlases(
+pub fn handle_texture_atlases(
     caches: Res<Sprite3dCaches>,
     mut query: Query<(&mut Mesh3d, &Sprite3d), Changed<Sprite3d>>,
 ) {
@@ -119,7 +119,8 @@ pub fn quad(w: f32, h: f32, pivot: Option<Vec2>, double_sided: bool) -> Mesh {
     // choose a better default?
     let mut mesh = Mesh::new(
         PrimitiveTopology::TriangleList,
-        RenderAssetUsages::RENDER_WORLD,
+        // RenderAssetUsages::RENDER_WORLD,
+        RenderAssetUsages::default(),
     );
 
     let vertices = match pivot {
@@ -187,7 +188,8 @@ pub fn quad(w: f32, h: f32, pivot: Option<Vec2>, double_sided: bool) -> Mesh {
         vec![0, 1, 2, 1, 3, 2]
     }));
 
-    mesh
+    // prevent some z-fighting by layering flat sprites above other mesh terrain
+    mesh.translated_by(Vec3::Z * 0.1)
 }
 
 // generate a StandardMaterial useful for rendering a sprite

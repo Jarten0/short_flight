@@ -1,11 +1,14 @@
 use super::animation::AnimationHandler;
 use super::{NPC, NPCInfo, animation, file::NPCAlmanac, file::NPCData};
+use crate::billboard::Billboard;
+use crate::collision::physics::Rigidbody;
 use crate::collision::{
-    self, BasicCollider, ColliderShape, CollisionLayers, DynamicCollision, ZHitbox,
+    self, BasicCollider, ColliderShape, CollisionLayers, DynamicCollision, TilemapCollision,
+    ZHitbox,
 };
 use crate::npc::ai::{NPCActions, NPCDesicion};
 use crate::npc::stats::FacingDirection;
-use crate::player::{self, Shaymin};
+use crate::shaymin::{self, Shaymin};
 use crate::sprite3d::{Sprite3d, Sprite3dBuilder, Sprite3dParams};
 use bevy::ecs::system::SystemState;
 use bevy::prelude::*;
@@ -54,7 +57,7 @@ impl Command for SpawnNPC {
         let required = (
             self.npc_id,
             data.info.clone(),
-            Transform::from_translation(self.position + Vec3::new(0., 0.2, 0.))
+            Transform::from_translation(self.position)
                 .with_rotation(Quat::from_rotation_x(f32::to_radians(-90.0))),
             Name::new(self.name.clone().unwrap_or(data.display_name.clone())),
         );
@@ -68,6 +71,9 @@ impl Command for SpawnNPC {
             },
             NPCDesicion::default(),
             FacingDirection::default(),
+            Rigidbody::default(),
+            TilemapCollision,
+            Billboard::default(),
         );
         let collider_shape = data.collider.clone();
         let atlas = TextureAtlas {
@@ -110,8 +116,12 @@ impl Command for SpawnNPC {
                     CollisionLayers::NPC,
                     CollisionLayers::Wall | CollisionLayers::NPC | CollisionLayers::Projectile,
                 ),
-                ZHitbox::default(),
-                DynamicCollision::default(),
+                ZHitbox {
+                    y_tolerance: 0.5,
+                    neg_y_tolerance: 0.0,
+                },
+                DynamicCollision,
+                Rigidbody::default(),
             ));
             observe_collision = true;
         }

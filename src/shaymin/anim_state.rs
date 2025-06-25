@@ -7,10 +7,11 @@ use bevy::prelude::*;
 
 pub fn animation(asset_server: &AssetServer, assets: &ShayminAssets) -> impl Bundle {
     AnimationHandler::new(AnimationSpritesheet::new(
-        vec![
+        [
             (AnimType::Idle.create_data(1, AnimationDirLabel::FullyDirectional)),
             (AnimType::Walking.create_data(2, AnimationDirLabel::FullyDirectional)),
-            (AnimType::AttackShoot.create_data(2, AnimationDirLabel::Horizontal)),
+            (AnimType::AttackShoot.create_data(2, AnimationDirLabel::None)),
+            (AnimType::AttackTackle.create_data(2, AnimationDirLabel::None)),
         ]
         .into_iter()
         .map(|value| (value.variant, value))

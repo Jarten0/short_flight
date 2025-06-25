@@ -1,17 +1,44 @@
-use crate::animation::AnimType;
-
+use super::interfaces::MoveData;
+use super::prelude::*;
+use crate::animation::{AnimType, AnimationData, AnimationDirLabel};
+use crate::assets::AnimationSpritesheet;
 use crate::npc::animation::AnimationHandler;
 use crate::npc::stats::{Damage, FacingDirection};
 use crate::projectile::Projectile;
-use crate::projectile::interfaces::SpawnProjectile;
+use crate::projectile::interfaces::{ProjectileCatalog, SpawnProjectile};
+use bevy::platform::collections::HashMap;
 
-use super::prelude::*;
 #[derive(Component, Reflect)]
 pub struct MagicalLeaf;
 
 impl MoveComponent for MagicalLeaf {
     fn build(&mut self, app: &mut App) {
-        // app.add_systems(FixedUpdate, process);
+        // let world = app.world_mut();
+        // let move_data = MoveData {
+        //     display_name: String::from("Magical Leaf"),
+        //     spritesheet: Some(AnimationSpritesheet::new(
+        //         Vec::from([(
+        //             AnimType::Idle,
+        //             AnimationData {
+        //                 variant: AnimType::Idle,
+        //                 frames: 1,
+        //                 direction_label: AnimationDirLabel::None,
+        //                 blocking_override: None,
+        //             },
+        //         )]),
+        //         UVec2 { x: 32, y: 32 },
+        //         world
+        //             .resource::<ProjectileCatalog>()
+        //             .image_files
+        //             .get(&Projectile::LeafAttack)
+        //             .unwrap()
+        //             .clone(),
+        //         world.resource::<AssetServer>(),
+        //     )),
+        //     collider: None,
+        //     related_animaition: None,
+        //     extra_info: HashMap::new(),
+        // };
     }
 
     // fn variant(&self) -> super::Move

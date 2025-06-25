@@ -1,8 +1,10 @@
+use crate::assets::AnimationSpritesheet;
 use crate::moves::magical_leaf::MagicalLeaf;
 use crate::npc::animation::AnimationHandler;
 use crate::npc::stats::{Damage, FacingDirection};
 
-use super::ProjectileInterface;
+use super::interfaces::{ProjectileCatalog, ProjectileData};
+use super::{Projectile, ProjectileInterface};
 use crate::collision::{BasicCollider, ColliderShape};
 use bevy::prelude::*;
 
@@ -12,6 +14,30 @@ pub struct LeafAttack;
 impl ProjectileInterface for LeafAttack {
     fn build(&mut self, app: &mut App) {
         app.add_systems(FixedUpdate, process);
+        // let world = app.world_mut();
+        // let projectile_data = ProjectileData {
+        //     variant: Projectile::LeafAttack,
+        //     display_name: String::from("Leaves"),
+        //     spritesheet: AnimationSpritesheet::new(
+        //         Vec::new(),
+        //         UVec2 { x: 32, y: 32 },
+        //         world
+        //             .resource::<ProjectileCatalog>()
+        //             .image_files
+        //             .get(&Projectile::LeafAttack)
+        //             .unwrap()
+        //             .clone(),
+        //         world.resource::<AssetServer>(),
+        //     ),
+        //     collider: ColliderShape::default(),
+        //     damage: Damage::default(),
+        //     assets: None,
+        // };
+        // let handle = world.resource::<AssetServer>().add(projectile_data);
+        // world
+        //     .resource_mut::<ProjectileCatalog>()
+        //     .data_files
+        //     .insert(Projectile::LeafAttack, handle);
     }
 
     fn on_spawn(

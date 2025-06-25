@@ -6,7 +6,7 @@ use bevy::prelude::*;
 use bitflags::bitflags;
 use serde::{Deserialize, Serialize};
 
-use crate::assets::ShortFlightLoadingState;
+use crate::assets::{self, ShortFlightLoadingState};
 use crate::ldtk::TileQuery;
 use crate::tile::{TileDepth, TileFlags, TileSlope};
 
@@ -54,7 +54,7 @@ impl Plugin for CollisionPlugin {
                     // GlobalTransforms will be finally updated in PostUpdate
                 )
                     .chain()
-                    .run_if(|load: Res<State<ShortFlightLoadingState>>| load.done()),
+                    .run_if(assets::loaded),
             );
     }
 }
@@ -127,7 +127,7 @@ impl CollisionEventTracker {
     }
 }
 
-/// Information for objects that move
+/// Labeller for collision entities that move around.
 #[derive(Debug, Reflect, Component, Default)]
 pub struct DynamicCollision;
 
@@ -323,6 +323,9 @@ pub fn query_collider_overlaps(
             .for_each(|(entity2, is_overlapping)| {
                 if dyn_col.currently_colliding.contains(&entity2) == is_overlapping {
                     return;
+                }
+                if is_overlapping {
+                    log::info!("{}", entity2);
                 }
                 event_tracker.register_overlap(
                     entity2,

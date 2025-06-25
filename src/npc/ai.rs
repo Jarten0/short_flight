@@ -4,7 +4,7 @@ use bevy::prelude::*;
 use crate::moves::Move;
 use crate::moves::interfaces::{MoveData, MoveInterfaces, MoveList, Moves, SpawnMove};
 use crate::moves::tackle::Tackle;
-use crate::player::Shaymin;
+use crate::shaymin::Shaymin;
 
 use super::NPCInfo;
 use super::animation::AnimationHandler;
